@@ -1,0 +1,60 @@
+# ===================================================================
+#             Template Configuration for ProBE
+# ===================================================================
+#
+# Instructions:
+# 1. Copy this file to 'config.yaml'.
+# 2. Fill in the paths to YOUR data files.
+# 3. Adjust the parameters as needed for your experiment.
+#
+# All file paths should be relative to the project directory that
+# you bind-mount to /data in the container.
+# ===================================================================
+
+# Options and settings to control the pipeline
+
+# ----------- Shared files and settings -----------
+shared:
+  new_goa: "/workspace/data/owl_data/your_goa.gz" # "path/to/your/goa.gz"
+  go_owl: "/workspace/data/owl_data/your_go.owl"   # "path/to/your/go.owl"
+  base_path: "/workspace/data" # Bind mounted project directory
+  run_path: "/workspace/results" # directory that will contain all the results of the computations
+  dmnd_data_path: "/workspace/diamond_data" # path to diamond_data
+  keep_tmp: true # keep the intermediate files, useful for debugging
+  run_tag:  "test0123" # Unique run ID, if empty a random one will be assigned. Please assign the same tag to correlated runs! TODO: spiegare bene questa cosa nel readme
+  chunk_size: 5000000  # Some operations require chunking modify this value to your system's availability
+  
+# ----------- Diamond files and settings -----------
+make_db:
+  db_source: "/workspace/your_uniprot.fasta"   # "path/to/your/uniprot.fasta"
+  db_name: "your_uniprot.dmnd" # Chhose a unique name for your dmnd database
+
+# ----------- Pipeline C4 files and settings -----------
+pipeline_C4:
+  old_goa_C4: "/workspace/data/owl_data/your_old_goa.gz"   # "path/to/your/goa_old_C4.gz"
+  preferred_threshold: 0.2  # Use the threshold eval file inside the knowledge report to make an informed decision
+  cores: 32  # Cores used for the DIAMOND search
+  stop_at_filtering: no
+  skip_to_filtering: no
+
+# ----------- Pipeline C5 files and settings -----------
+pipeline_C5:
+  old_goa_C5: "/workspace/data/owl_data/your_old_goa.gz"   # "path/to/your/goa_old_C5.gz"
+  preferred_threshold: 0.2   # Use the threshold eval file inside the knowledge report to make an informed decision
+  cores: 32 # Cores used for the DIAMOND search
+  stop_at_filtering: no
+  skip_to_filtering: no
+ 
+# ----------- Preprocessing files and settings -----------
+preprocessing:
+  model_path:  # "path/to/your/model_predictions.tsv"
+  model_name:  custom_name # "custom_name"
+  propagate: yes
+
+# ----------- Benchmarking files and settings -----------
+benchmarking:
+  model_path_C5: # "path/to/your/preprocessed_model_predictions.tsv"
+  model_path_C4: # "path/to/your/preprocessed_model_predictions.tsv"
+  model_name: "custom_model"  # "custom_name"
+  stepsize: 0.01
+  cafa: "both"  # CAFA used for the benchmark: C5, C4 or both

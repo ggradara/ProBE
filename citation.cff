@@ -1,0 +1,13 @@
+# This is a CITATION.cff file. See https://citation-file-format.github.io/
+cff-version: 1.2.0
+message: "If you use this software, please cite it as below."
+authors:
+  - family-names: "Gradara"
+    given-names: "Gabriele"
+    orcid: "https://orcid.org/0009-0009-0444-450X"
+    affiliation: "University of Padova"
+title: "ProBE: a reliable benchmarking pipeline for the evaluation of Automatic Function Prediction models"
+version: 1.0.0
+date-released: 2025-8-??
+repository-code: "https://github.com/ggradara/ProBE"
+license: MIT

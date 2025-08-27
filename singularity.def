@@ -1,0 +1,85 @@
+# Blue print to build the ProBE Singularity container.
+
+Bootstrap: docker
+From: ubuntu:22.04
+
+%labels
+    Gabriele Gradara <gabriele.gradara@studenti.unipd.it>
+    Version 1.0.0
+    Description "ProBE: A reproducible pipeline for benchmarking AFP tools."
+
+%environment
+    # These environment variables are set when the container runs.
+    # Set the locale to prevent Python errors with character encoding.
+    export LC_ALL=C.UTF-8
+    export LANG=C.UTF-8
+    
+    # Add ProBE's scripts directory to the PATH so they can be called directly.
+    export PATH="/opt/probe:$PATH"
+
+
+%files
+    # Copy the project files into the container.
+    main.py /opt/probe/
+    requirements.txt /opt/probe/
+    src_collection.py /opt/probe/
+    pipeline_C4_fun.py /opt/probe/
+    pipeline_C5_fun.py /opt/probe/
+    preprocess_predictions_fun.py /opt/probe/
+    bench_by_aspect_custom_fun.py /opt/probe/
+    bench_general_custom_fun.py /opt/probe/
+    owlLibrary3.py /opt/probe/
+    configs/config.template.yaml /opt/probe/configs/   ### ATTENZIONE; DA RIVEDERE IL CONFIG é DENTRO IL SIF????????
+    makedb.sh /opt/probe/
+    diamond_chunked_cafa4.sh /opt/probe/
+    diamond_chunked_cafa5.sh /opt/probe/
+    diamond_chunked_fur_inv_cafa.sh /opt/probe/
+
+
+%post
+
+    # 1. Update OS and install system dependencies
+    #    - wget: for downloading files
+    #    - build-essential: for compiling C-extensions if pip needs to
+    #    - python3: the Python 3 interpreter
+    #    - python3-pip: the pip package manager
+    #    - git: good practice to have for some pip installs
+    echo "--- Installing system dependencies ---"
+    apt-get update && apt-get install -y --no-install-recommends \
+        wget \
+        build-essential \
+        python3 \
+        python3-pip \
+        git \
+        && rm -rf /var/lib/apt/lists/*
+
+    # 2. Install DIAMOND (unpacked)
+    echo "--- Installing DIAMOND ---"
+    # Replace with the latest version link if needed
+    wget https://github.com/bbuchfink/diamond/releases/download/v2.1.13/diamond-linux64.tar.gz -O /tmp/diamond.tar.gz && \
+    tar xvfz /tmp/diamond.tar.gz -C /tmp && \
+    mv /tmp/diamond /opt/probe && \
+    rm /tmp/diamond.tar.gz
+    # By moving it to /usr/local/bin, it is now on the system's PATH.
+
+    # 3. Install Python packages using pip
+    echo "--- Installing Python packages ---"
+    # Upgrade pip itself first
+    python3 -m pip install --upgrade pip
+    # Install all packages from the requirements.txt file
+    # --no-cache-dir keeps the image size smaller
+    pip3 install --no-cache-dir -r /opt/probe/requirements.txt
+
+
+    # 4. Make all shell scripts executable
+    echo "--- Setting permissions for scripts ---"
+
+    chmod +x /opt/probe/makedb.sh
+    chmod +x /opt/probe/diamond_chunked_cafa4.sh
+    chmod +x /opt/probe/diamond_chunked_cafa5.sh
+    chmod +x /opt/probe/diamond_chunked_fur_inv_cafa.sh
+
+
+%runscript
+    # Command executed when a user runs `singularity run <container.sif>`.    
+    exec python3 /opt/probe/main.py "$@"
