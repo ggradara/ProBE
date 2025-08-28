@@ -5,7 +5,7 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE.txt)
 [![DOI](https://zenodo.org/badge/1045655066.svg)](https://doi.org/10.5281/zenodo.16980307)
 
-ProBE is a reproducible pipeline for the complete benchmarking of Automatic Function Prediction (AFP) tools. It constructs a time-resolved ground truth from Gene Ontology (GO) annotations, preprocesses model predictions, and evaluates performance using metrics from the CAFA challenges.
+ProBE (Protein Benchmark Evaluator) is a reproducible pipeline for the complete benchmarking of Automatic Function Prediction (AFP) tools. It constructs a time-resolved ground truth from Gene Ontology (GO) annotations, preprocesses model predictions, and evaluates performance using metrics from the CAFA challenges.
 
 ---
 
