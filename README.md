@@ -139,7 +139,7 @@ ProBE requires the following data files, which you must download yourself:
 
 - UniProt Knowledgebase (fasta): A FASTA file of protein sequences. For maximum coverage, we recommend concatenating UniProt SwissProt and TrEMBL. Available from [UniProt](https://www.uniprot.org/uniprotkb).
 
-- You must also download the diamond_data directory and its contents from this github repository and make it available for the pipeline, providing its path in the config file.
+- You must also download the diamond_data directory and its contents from the newest release and make it available for the pipeline, providing its path in the config file.
 
 
 ### Configuration (config.yaml)
@@ -416,7 +416,7 @@ Brief description of the most notable directories:
 - `data/raw_predictions`:  you can put here the *unprocessed* prediction of the tool that you want to benchmark.
 - `data/tmp`: this directory will be populated by different directories named tmp_{run_tag} that will contain the temporary files necessary to process the pipelines pc4 and pc5. You can set the config to delete the tmp_{run_tag} directory of each run after it has ended or to keep it. This systems allows you to have complete control over you data, proventing the pollution of the /tmp directory and the dangling intermediate problem.  
 **IMPORTANT: If you're are running pc4 and pc5 simultaneously with the same run_tag you must set the flag keep_tmp: True. Or else, pc5 will finish faster and delete the directory whiLE pc4 is still relying on it!**
-- `diamond_data`: contains the file necessary to perform the diamond searches on the diamond database. Don't alter it!
+- `diamond_data`: contains the file necessary to perform the diamond searches on the diamond database. Don't alter it! (You can download this directory from the newest release)
 - `results`: similarly to data/tmp, this directory contains a different directory for each different run, called results_{run_tag}. These directories will contain the results from any process performed by the pipeline.
     - `benchmark_results`: contains the graphs and reports regarding the computed metrics of the benchmark itself.
     - `ground_truth`: contains the dataset of the final ground truth that will be used in the benchmark.
