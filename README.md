@@ -151,7 +151,7 @@ The config file has 6 different parts, one that is used by multiple commands and
 Whenever you insert a path, please **use the absolute path**, this will minimize pathing conflicts.
 
 - `shared`:
-    - `new_goa`: the path of the gzipped GOA containing the new annotations
+    - `new_goa`: the path of the gzipped GOA containing the new annotations [str]
     - `go_owl`: path to the go.owl of the most recent GOA (new_goa) [str]
     - `base_path`: bind-mounted project directory [str] (Relevant only if containerized, if this is not the case it can be any directory you want.)
     - `run_path`: name of the individual run (Directory that will contain all the results of the computations) [str]
@@ -164,9 +164,9 @@ Whenever you insert a path, please **use the absolute path**, this will minimize
     - `db_name`: the name that will be given to the diamond database. [str]
 - `pipeline_c4`:
     - `old_goa_C4`: GOA containing the past annotations (maybe the same or different from the C5 process). [str]
-    - `preferred_threshold`: 0.2 ???? Non ricordo esattamente riguardare! [float 0-1]
+    - `preferred_threshold`: portion of admitted removed annotations to still consider a gene product reliable (default: 0.2) [float 0-1]
     - `cores`: How many cores to use, during the DIAMOND search [int]
-    - `stop_at_filtering`: stop the pipeline right before the implementation of the 'preferred threshold' this way the user may choose to evaluate the preliminary data () and choose the preferred threshold on their own. However the default is good for most uses. [bool]
+    - `stop_at_filtering`: stop the pipeline right before the implementation of the 'preferred threshold' this way the user may choose to evaluate the preliminary data and the preferred threshold on their own. However the default is good for most uses. [bool]
     - `skip_to_filtering`: resume the pipeline to the application of the filter, once the user choose the preferred_threshold [bool]
 - `pipeline_c5`:
     - `old_goa_C5`: GOA containing the past annotations (maybe the same or different from the C4 process) [str]
@@ -175,7 +175,7 @@ Whenever you insert a path, please **use the absolute path**, this will minimize
     - `stop_at_filtering`: stop the pipeline right before the implementation of the 'preferred threshold' this way the user may choose to evaluate the preliminary data () and choose the preferred threshold on their own. However the default is good for most uses. [bool]
     - `skip_to_filtering`: resume the pipeline to application of the filter, once the user choose the preferred_threshold [bool]
 - `preprocessing`:
-    - `model_path`: path to the **raw** predictions of the tool  (The exact specifications will be in the designated section) The script will recognize automatically if the preiction are for CAF 4, CAFA 5 or both and behave accordingly. [str]
+    - `model_path`: path to the **raw** predictions of the tool  (The exact specifications will be in the designated section) The script will recognize automatically if the predictions are for CAFA 4, CAFA 5 or both and behave accordingly. [str]
     - `model_name`: Name of the tool [str]
     - `propagate`: Propagate the annotations during the preprocessing step [bool]
 - benchmarking:
@@ -194,7 +194,7 @@ The pipeline recognizes these commands:
 - `pc5`: creates the ground truth necessary to run the benchmark using the C5 dataset.
 - `preprocess`: preprocesses the predictions from a function prediction prediction algorithm to make them compatible with the benchmark
 - `bench_by_aspect`: compares the benchmark to the ground truth to compute the benchmark. It does not discriminate between Aspects computing only the general metrics.
-- `bench_general`: compares the benchmark to the ground truth to compute the benchmark. It discriminates between Aspects, computing a different and indipendent metric for each..
+- `bench_general`: compares the benchmark to the ground truth to compute the benchmark. It discriminates between Aspects, computing a different and indipendent metric for each.
 
 For each command the only mandatory argument is --config followed by the path of the config file. The config contains in itself all the required data used to run any command.
 
@@ -214,7 +214,7 @@ predictions.tsv is the file containing the predictions of the tool that must be 
     - Cellular Components: Cellular Component/CC/C
     - Biological Processes: Biological Process/BP/B/P
     - Molecular Functions: Molecular Function/MF/F/M
-- Score: the score of the individual prediction. It must be a float between 0 and 1. If this is not the case, consider the normalization of the score.
+- Score: the score of the individual prediction. It must be a float between 0 and 1. If this is not the case, consider normalizing of the score.
 
 
 ```
@@ -241,12 +241,12 @@ Then, go to the preprocessing section and set the model_path to the location of 
 After the preprocessing you can the benchmark commands as usual, you just need to change the paths and model_name in the benchmark section of the config files accordingly.
 
 **WARNING: each preprocessed predictions file is unique to each ground truth due to the different aliases!**  
-Eg: if I preprocessed the prediction of a tool using the ground truth from run "test1" and then used them to benchmark against the ground truth from "test2" the results will be unreliable. To do it correctly you should repeat the preprocessing process with the new ground truth, and only then your benchmark will be reliable.
+E.g.: if I preprocessed the prediction of a tool using the ground truth from run "test1" and then used them to benchmark against the ground truth from "test2" the results will be unreliable. To do it correctly you should repeat the process with the new ground truth, and only then your benchmark will be reliable.
 
 
 ### CLI Override
 
-You can also submit the following arguments. These will override the instruction on the config file, using the data provide with the argument itself. This will change the behaviour of the pipeline, however it will not change the config file itself.
+You can also submit the following arguments. These will override the instruction on the config file, using the data provided with the argument itself. This will change the behaviour of the pipeline, however it will not change the config file itself.
 
 - --cores
 - --stepsize
@@ -279,7 +279,7 @@ You can use the fasta files to make predictions about the proteins to evaluate a
 ### Typical Use Case [Python Run]
 
 This is the typical use case for running ProBE with the Python scripts directly. 
-This use case involves the creation of a diamond database with `make:db`. Then run `pc4` and/or `pc5` to create the ground truth. You can then run your own tool using the fasta files based on the ground truth. After that you need to preprocess your predictions using the command `preprocess`. After running the preprocessing you can then run the benchmarks commands themselves: `bench_general` and `bench_by_aspect` to compute the metrics.
+This use case involves the creation of a diamond database with `make_db`. Then run `pc4` and/or `pc5` to create the ground truth. You can then run your own tool using the fasta files based on the ground truth. After that you need to preprocess your predictions using the command `preprocess`. After running the preprocessing you can then run the benchmarks commands themselves: `bench_general` and `bench_by_aspect` to compute the metrics.
 
 For each run, please choose and keep constant the run_tag (in the config.yaml file) to allow each command to access the correct data.  
 
@@ -287,7 +287,7 @@ Sequence of commands:
 
 make_db -> pc4/pc5 (potentially simoultaneously) -> preprocess -> bench_by_aspect/bench_general (potentially simoultaneously)
 
-Run makedb
+Run make_db
 ```python
 python main.py make_db --config configs/config.template.yaml
 ```
@@ -319,7 +319,7 @@ python main.py bench_general --config configs/config.template.yaml
 
 Due to some quirks in the data, the CAFA 4 and CAFA 5 dataset can't share the same pipeline and must be handled differently. However the process they are subjected to is the same.
 
-The pipelines pc4 and pc5 both start with multiple DIAMOND searches of the protein of the CAFA 4 and CAFA 5 datasets (superset_cafa4.fasta and testsuperset_cafa5.fasta). These searches are performed in multiple rounds with progressively deeper settings to find all the possible hits.
+The pipelines pc4 and pc5 both start with multiple DIAMOND searches for the proteins from the CAFA 4 and CAFA 5 datasets (superset_cafa4.fasta and testsuperset_cafa5.fasta). These searches are performed in multiple rounds with progressively deeper settings to find all the possible hits.
 
 The perfects hits are selected and then an alias list is made. The alias list allows to recognize proteins with the same aminoacidic sequence but different IDs as the same gene product.
 
@@ -416,7 +416,7 @@ Brief description of the most notable directories:
 - `data/owl_data`: you can put here the go.owl and the GOA files. The pipeline will also make and store the files depr.json and obs.json regarding the deprecated annotations in the go and dict_ics.json, that contains the value of the information content of each annotation.
 - `data/raw_predictions`:  you can put here the *unprocessed* prediction of the tool that you want to benchmark.
 - `data/tmp`: this directory will be populated by different directories named tmp_{run_tag} that will contain the temporary files necessary to process the pipelines pc4 and pc5. You can set the config to delete the tmp_{run_tag} directory of each run after it has ended or to keep it. This systems allows you to have complete control over you data, proventing the pollution of the /tmp directory and the dangling intermediate problem.  
-**IMPORTANT: If you're are running pc4 and pc5 simultaneously with the same run_tag you must set the flag keep_tmp: True. Or else, pc5 will finish faster and delete the directory whiLE pc4 is still relying on it!**
+**IMPORTANT: If you're are running pc4 and pc5 simultaneously with the same run_tag you must set the flag keep_tmp: True. Or else, pc5 will finish faster and delete the directory while pc4 is still relying on it!**
 - `diamond_data`: contains the file necessary to perform the diamond searches on the diamond database. Don't alter it! (You can download this directory from the newest release)
 - `results`: similarly to data/tmp, this directory contains a different directory for each different run, called results_{run_tag}. These directories will contain the results from any process performed by the pipeline.
     - `benchmark_results`: contains the graphs and reports regarding the computed metrics of the benchmark itself.
@@ -445,9 +445,9 @@ Please cite the specific version you used for your analysis.
 
 **To cite version v1.0.0:**
 
-    Gabriele Gradara. (2025). ProBE: a reliable benchmarking pipeline for the evaluation of Automatic Function Prediction models (Version v1.0.0) [Computer software]. Zenodo. http://doi.org/10.5281/zenodo.PLACEHOLDER
+    Gabriele Gradara. (2025). ProBE: a reliable benchmarking pipeline for the evaluation of Automatic Function Prediction models (Version v1.0.0) [Computer software]. Zenodo. http://doi.org/10.5281/zenodo.16980308
 
-A new DOI will be created for each new release. You can find the full list of citable versions on our Zenodo page(link).
+A new DOI will be created for each new release. You can find the full list of citable versions on our [Zenodo page](https://zenodo.org/records/16980308).
 
 ## Acknowledgments
 
