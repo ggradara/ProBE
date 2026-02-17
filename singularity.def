@@ -29,7 +29,7 @@ From: ubuntu:22.04
     bench_by_aspect_custom_fun.py /opt/probe/
     bench_general_custom_fun.py /opt/probe/
     owlLibrary3.py /opt/probe/
-    configs/config.template.yaml /opt/probe/configs/   ### ATTENZIONE; DA RIVEDERE IL CONFIG é DENTRO IL SIF????????
+    configs/config.template.yaml /opt/probe/configs/
     makedb.sh /opt/probe/
     diamond_chunked_cafa4.sh /opt/probe/
     diamond_chunked_cafa5.sh /opt/probe/
@@ -78,6 +78,8 @@ From: ubuntu:22.04
     chmod +x /opt/probe/diamond_chunked_cafa4.sh
     chmod +x /opt/probe/diamond_chunked_cafa5.sh
     chmod +x /opt/probe/diamond_chunked_fur_inv_cafa.sh
+
+    chmod -R a+rx /opt/probe/
 
 
 %runscript

@@ -1,3 +1,4 @@
+import traceback
 import argparse
 import yaml
 import os
@@ -120,7 +121,7 @@ def run_pc5(config: dict, dir_tree: dict):
         
     # Evaluate the provided fasta reference
     if fasta_reference == "internal":
-        fasta_reference = "diamond_data/testsuperset_cafa5.fasta"
+        fasta_reference = "diamond_data/CAFA5.fasta"
     else:
         if not fasta_reference:
             print("[ERROR] 'fasta_reference' not defined in pipeline_C5 section of config.", file=sys.stderr)
@@ -209,7 +210,7 @@ def run_pc4(config: dict, dir_tree: dict):
         
     # Evaluate the provided fasta reference
     if fasta_reference == "internal":
-        fasta_reference = "diamond_data/superset_cafa4.fasta"
+        fasta_reference = "diamond_data/CAFA4.fasta"
     else:
         if not fasta_reference:
             print("[ERROR] 'fasta_reference' not defined in pipeline_C4 section of config.", file=sys.stderr)
@@ -598,7 +599,8 @@ def main():
         print("\n" + "="*60, file=sys.stderr)
         print("          FATAL SETUP ERROR: UNEXPECTED ISSUE", file=sys.stderr)
         print("="*60, file=sys.stderr)
-        print(f"An unexpected error occurred during the setup phase: {e}", file=sys.stderr)
+        # print(f"An unexpected error occurred during the setup phase: {e}", file=sys.stderr)
+        traceback.print_exc()
         sys.exit(1)
 
     # --- Execute the chosen function ---
@@ -609,7 +611,8 @@ def main():
         print("\n" + "="*60, file=sys.stderr)
         print("          PIPELINE ERROR: UNEXPECTED FAILURE", file=sys.stderr)
         print("="*60, file=sys.stderr)
-        print(f"An unexpected error occurred during the analysis: {e}", file=sys.stderr)
+        # print(f"An unexpected error occurred during the setup phase: {e}", file=sys.stderr)
+        traceback.print_exc()
     finally:
         # Get the cleanup setting from the config. Default to `False` (meaning we DO clean up).
         cleanup_enabled = not config.get('shared', {}).get('keep_tmp', True)

@@ -8,6 +8,6 @@ authors:
     affiliation: "University of Padova"
 title: "ProBE: a reliable benchmarking pipeline for the evaluation of Automatic Function Prediction models"
 version: 1.0.0
-date-released: 2025-8-??
+date-released: 2025-8-28
 repository-code: "https://github.com/ggradara/ProBE"
 license: MIT

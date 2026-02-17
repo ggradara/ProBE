@@ -179,7 +179,7 @@ def pipeline_C4(uniprot_merged_path, cores, goa_new, goa_old, go_owl, preferred_
     fn_6_filtering = of_5_selected
     preferred_threshold_char = str(preferred_threshold).replace(".", "_") # make it influence the names before everything
     ID_list_6 = benchmark_c4_dir + f"ID_list_C4_6_{preferred_threshold_char}.tsv"
-    path_to_fasta = dir_tree['dmnd_data_path'] + "/superset_cafa4.fasta"
+    path_to_fasta = dir_tree['dmnd_data_path'] + "/CAFA4.fasta"
     df_threshold = benchmark_c4_dir + f"data_with_knowledge_type_C4_6_{preferred_threshold_char}.tsv"
     df_cleaned_name = benchmark_c4_dir + f"data_with_knowledge_type_cleaned_C4_6_{preferred_threshold_char}.tsv"
     of_6_filtering = benchmark_c4_dir + f"selected_sequences_C4_threshold_{preferred_threshold_char}.fasta"

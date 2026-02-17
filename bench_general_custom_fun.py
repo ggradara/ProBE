@@ -12,6 +12,63 @@ import json
 
 start_time = time.time()
 
+tracker_count = [0]
+_MISSING = object()
+
+def count_defaults_in_get(data_dict, target_key, tracker, default):
+    # Let's say we're checking this in a loop or function
+    result = data_dict.get(target_key, _MISSING)
+    
+    if result is _MISSING:
+        tracker[0] += 1
+        # Handle the actual default logic here
+        result = default
+        
+    return result
+
+
+def compute_IC_metrics(TP_predictions, FP_predictions, FN_predictions, IC_dict, default_IC=5):
+    # Da valutare quante volte viene utilizzato il default
+    
+    # GO_pred = set(GO_pred)
+    # GO_gt = group_gt['GO_ID']
+    # GO_gt = set(GO_gt)
+
+    # TP_predictions = list(GO_pred & GO_gt)  # The TP predictions are the shared ones
+    # FP_predictions = list(GO_pred - GO_gt)  # Predictions that are not in the gt
+    # FN_predictions = list(GO_gt - GO_pred)  # Predictions missed from the gt
+
+    # FP_IC_values = np.array([IC_dict.get(prediction, default_IC) for prediction in FP_predictions])
+    # FN_IC_values = np.array([IC_dict.get(prediction, default_IC) for prediction in FN_predictions])
+    
+    # FP_IC_values = misinformation 
+    misinformation = sum(np.array([count_defaults_in_get(IC_dict, prediction, tracker_count, default_IC) for prediction in FP_predictions]))
+    # FN_IC_values = remaining_uncertainty
+    remaining_uncertainty = sum(np.array([count_defaults_in_get(IC_dict, prediction, tracker_count, default_IC) for prediction in FN_predictions]))
+    
+    S_measure = np.sqrt(np.power(np.sum(misinformation), 2) + np.power(np.sum(remaining_uncertainty), 2))
+
+    # Compute wighted precision, recall and F1
+
+    TP_IC_values = sum(np.array([count_defaults_in_get(IC_dict, prediction, tracker_count, default_IC) for prediction in TP_predictions]))
+    
+    if (TP_IC_values + misinformation) == 0:  # 0 div check precision
+        IC_weighted_precision = 0
+    else:
+        IC_weighted_precision = TP_IC_values/(TP_IC_values + misinformation)
+    if (TP_IC_values + remaining_uncertainty) == 0:  # 0 div check recall
+        IC_weighted_recall = 0
+    else:
+        IC_weighted_recall = TP_IC_values/(TP_IC_values + remaining_uncertainty)  
+    if (IC_weighted_precision + IC_weighted_recall) == 0:  # 0 div check F1 score
+        IC_weighted_F1 = 0
+    else:
+        IC_weighted_F1 = 2*(IC_weighted_precision * IC_weighted_recall)/(IC_weighted_precision + IC_weighted_recall)
+
+
+    return IC_weighted_precision, IC_weighted_recall, IC_weighted_F1, misinformation, remaining_uncertainty, S_measure
+
+
 
 def make_ROC(fpr, tpr, precision, tool_name, cafa, data_type, path):
     roc_auc = auc(fpr, tpr)
@@ -81,7 +138,7 @@ def make_multiROC(fpr_NK, tpr_NK, precision_NK, fpr_LK, tpr_LK, precision_LK, fp
     plt.savefig(f"{path}/comprehensive_ROC_{tool_name}_{cafa}.png", format="png")
     
     
-def make_PRC(precision, recall, tool_name, cafa, data_type, path):
+def make_PRC(precision, recall, tool_name, cafa, data_type, path, add_tag=''):
     precision = np.array(precision)
     recall = np.array(recall)
     
@@ -105,10 +162,10 @@ def make_PRC(precision, recall, tool_name, cafa, data_type, path):
     plt.legend(loc='lower right')
     plt.grid(True)
     plt.tight_layout()
-    plt.savefig(f"{path}/PRC_{data_type}_{tool_name}_{cafa}.png", format="png")
+    plt.savefig(f"{path}/PRC_{data_type}_{tool_name}_{cafa}{add_tag}.png", format="png")
     
     
-def make_multiPRC(precision_NK, recall_NK, precision_LK, recall_LK, precision_general, recall_general, tool_name, cafa, path):
+def make_multiPRC(precision_NK, recall_NK, precision_LK, recall_LK, precision_general, recall_general, tool_name, cafa, path, add_tag=''):
     precision_NK = np.array(precision_NK)
     recall_NK = np.array(recall_NK)
     precision_LK = np.array(precision_LK)
@@ -155,7 +212,7 @@ def make_multiPRC(precision_NK, recall_NK, precision_LK, recall_LK, precision_ge
     plt.legend(loc='lower right')
     plt.grid(True)
     plt.tight_layout()
-    plt.savefig(f"{path}/comprehensive_PRC_{tool_name}_{cafa}.png", format="png")
+    plt.savefig(f"{path}/comprehensive_PRC_{tool_name}_{cafa}{add_tag}.png", format="png")
 
 
 def compute_benchmark_by_cafa(path, model, cafa, steps, current_datetime, IC_dict, dir_tree):
@@ -196,9 +253,16 @@ def compute_benchmark_by_cafa(path, model, cafa, steps, current_datetime, IC_dic
     tot_FDR_NK = []
     tot_FPR_NK = []
     tot_TPR_NK = []
+    # tot_S_measure_NK = []
+
+    tot_IC_weighted_precision_NK = [] 
+    tot_IC_weighted_recall_NK = []
+    tot_IC_weighted_F1_NK = []
+    tot_misinformation_NK = []
+    tot_remaining_uncertainty_NK = []
     tot_S_measure_NK = []
 
-    
+
     min_thresh = 0
     max_thresh = 1
     thresholds = np.arange(min_thresh, max_thresh, steps)
@@ -245,11 +309,11 @@ def compute_benchmark_by_cafa(path, model, cafa, steps, current_datetime, IC_dic
             TP_predictions = list(GO_pred & GO_gt)  # The TP predictions are the shared ones
             FP_predictions = list(GO_pred - GO_gt)  # Predictions that are not in the gt
             FN_predictions = list(GO_gt - GO_pred)  # Predictions missed from the gt
-            FP_IC_values = np.array([IC_dict.get(prediction, default_IC) for prediction in FP_predictions])
-            FN_IC_values = np.array([IC_dict.get(prediction, default_IC) for prediction in FN_predictions])
-            S_value = np.sqrt(np.power(np.sum(FP_IC_values), 2) + np.power(np.sum(FN_IC_values), 2))
+            # FP_IC_values = np.array([IC_dict.get(prediction, default_IC) for prediction in FP_predictions])
+            # FN_IC_values = np.array([IC_dict.get(prediction, default_IC) for prediction in FN_predictions])
+            # S_value = np.sqrt(np.power(np.sum(FP_IC_values), 2) + np.power(np.sum(FN_IC_values), 2))
             
-            total_S_NK += S_value
+            # total_S_NK += S_value
             total_TP_NK += len(TP_predictions)
             total_TN_NK += len(TN_predictions)
             total_FP_NK += len(FP_predictions)
@@ -287,7 +351,19 @@ def compute_benchmark_by_cafa(path, model, cafa, steps, current_datetime, IC_dic
         tot_FDR_NK.append(FDR)
         tot_FPR_NK.append(FPR)
         tot_TPR_NK.append(TPR)
-        tot_S_measure_NK.append(total_S_NK)
+        # tot_S_measure_NK.append(total_S_NK)
+
+        IC_weighted_precision, IC_weighted_recall, IC_weighted_F1, misinformation, \
+            remaining_uncertainty, S_measure = compute_IC_metrics(TP_predictions, FP_predictions, FN_predictions, IC_dict)
+
+        tot_IC_weighted_precision_NK.append(IC_weighted_precision)
+        tot_IC_weighted_recall_NK.append(IC_weighted_recall)
+        tot_IC_weighted_F1_NK.append(IC_weighted_F1)
+        tot_misinformation_NK.append(misinformation)
+        tot_remaining_uncertainty_NK.append(remaining_uncertainty)
+        tot_S_measure_NK.append(S_measure)
+
+
 
     NK_time = time.time()
     elapsed_time = NK_time - start_time  # End timer NK
@@ -316,6 +392,13 @@ def compute_benchmark_by_cafa(path, model, cafa, steps, current_datetime, IC_dic
     tot_FDR_LK = []
     tot_FPR_LK = []
     tot_TPR_LK = []
+    tot_S_measure_LK = []
+
+    tot_IC_weighted_precision_LK = [] 
+    tot_IC_weighted_recall_LK = []
+    tot_IC_weighted_F1_LK = []
+    tot_misinformation_LK = []
+    tot_remaining_uncertainty_LK = []
     tot_S_measure_LK = []
 
 
@@ -360,11 +443,11 @@ def compute_benchmark_by_cafa(path, model, cafa, steps, current_datetime, IC_dic
             TP_predictions = list(GO_pred & GO_gt)  # The TP predictions are the shared ones
             FP_predictions = list(GO_pred - GO_gt)  # Predictions that are not in the gt
             FN_predictions = list(GO_gt - GO_pred)  # Predictions missed from the gt
-            FP_IC_values = np.array([IC_dict.get(prediction, default_IC) for prediction in FP_predictions])
-            FN_IC_values = np.array([IC_dict.get(prediction, default_IC) for prediction in FN_predictions])
-            S_value = np.sqrt(np.power(np.sum(FP_IC_values), 2) + np.power(np.sum(FN_IC_values), 2))
+            # FP_IC_values = np.array([IC_dict.get(prediction, default_IC) for prediction in FP_predictions])
+            # FN_IC_values = np.array([IC_dict.get(prediction, default_IC) for prediction in FN_predictions])
+            # S_value = np.sqrt(np.power(np.sum(FP_IC_values), 2) + np.power(np.sum(FN_IC_values), 2))
             
-            total_S_LK += S_value
+            # total_S_LK += S_value
             total_TP_LK += len(TP_predictions)
             total_TN_LK += len(TN_predictions)
             total_FP_LK += len(FP_predictions)
@@ -402,7 +485,17 @@ def compute_benchmark_by_cafa(path, model, cafa, steps, current_datetime, IC_dic
         tot_FDR_LK.append(FDR)
         tot_FPR_LK.append(FPR)
         tot_TPR_LK.append(TPR)
-        tot_S_measure_LK.append(total_S_LK)
+        # tot_S_measure_LK.append(total_S_LK)
+
+        IC_weighted_precision, IC_weighted_recall, IC_weighted_F1, misinformation, \
+            remaining_uncertainty, S_measure = compute_IC_metrics(TP_predictions, FP_predictions, FN_predictions, IC_dict)
+
+        tot_IC_weighted_precision_LK.append(IC_weighted_precision)
+        tot_IC_weighted_recall_LK.append(IC_weighted_recall)
+        tot_IC_weighted_F1_LK.append(IC_weighted_F1)
+        tot_misinformation_LK.append(misinformation)
+        tot_remaining_uncertainty_LK.append(remaining_uncertainty)
+        tot_S_measure_LK.append(S_measure)
 
     LK_time = time.time()
     elapsed_time = LK_time - NK_time  # End timer LK
@@ -431,6 +524,13 @@ def compute_benchmark_by_cafa(path, model, cafa, steps, current_datetime, IC_dic
     tot_FDR_general = []
     tot_FPR_general = []
     tot_TPR_general = []
+    tot_S_measure_general = []
+
+    tot_IC_weighted_precision_general = [] 
+    tot_IC_weighted_recall_general = []
+    tot_IC_weighted_F1_general = []
+    tot_misinformation_general = []
+    tot_remaining_uncertainty_general = []
     tot_S_measure_general = []
 
 
@@ -468,7 +568,6 @@ def compute_benchmark_by_cafa(path, model, cafa, steps, current_datetime, IC_dic
             else:
                 GO_not_pred = []
                 TN_predictions = []
-
                 
             GO_pred = set(GO_pred)
             GO_gt = group_gt['GO_ID']
@@ -477,11 +576,11 @@ def compute_benchmark_by_cafa(path, model, cafa, steps, current_datetime, IC_dic
             TP_predictions = list(GO_pred & GO_gt)  # The TP predictions are the shared ones
             FP_predictions = list(GO_pred - GO_gt)  # Predictions that are not in the gt
             FN_predictions = list(GO_gt - GO_pred)  # Predictions missed from the gt
-            FP_IC_values = np.array([IC_dict.get(prediction, default_IC) for prediction in FP_predictions])
-            FN_IC_values = np.array([IC_dict.get(prediction, default_IC) for prediction in FN_predictions])
-            S_value = np.sqrt(np.power(np.sum(FP_IC_values), 2) + np.power(np.sum(FN_IC_values), 2))
+            # FP_IC_values = np.array([IC_dict.get(prediction, default_IC) for prediction in FP_predictions])
+            # FN_IC_values = np.array([IC_dict.get(prediction, default_IC) for prediction in FN_predictions])
+            # S_value = np.sqrt(np.power(np.sum(FP_IC_values), 2) + np.power(np.sum(FN_IC_values), 2))
             
-            total_S_general += S_value
+            # total_S_general += S_value
             total_TP_general += len(TP_predictions)
             total_TN_general += len(TN_predictions)
             total_FP_general += len(FP_predictions)
@@ -519,7 +618,17 @@ def compute_benchmark_by_cafa(path, model, cafa, steps, current_datetime, IC_dic
         tot_FDR_general.append(FDR)
         tot_FPR_general.append(FPR)
         tot_TPR_general.append(TPR)
-        tot_S_measure_general.append(total_S_general)
+        # tot_S_measure_general.append(total_S_general)
+
+        IC_weighted_precision, IC_weighted_recall, IC_weighted_F1, misinformation, \
+            remaining_uncertainty, S_measure = compute_IC_metrics(TP_predictions, FP_predictions, FN_predictions, IC_dict)
+
+        tot_IC_weighted_precision_general.append(IC_weighted_precision)
+        tot_IC_weighted_recall_general.append(IC_weighted_recall)
+        tot_IC_weighted_F1_general.append(IC_weighted_F1)
+        tot_misinformation_general.append(misinformation)
+        tot_remaining_uncertainty_general.append(remaining_uncertainty)
+        tot_S_measure_general.append(S_measure)
 
     general_time = time.time()
     elapsed_time = general_time - start_time  # End timer general
@@ -532,6 +641,10 @@ def compute_benchmark_by_cafa(path, model, cafa, steps, current_datetime, IC_dic
     print(f"Max FDR {knowledge_type}: {max(tot_FDR_general)}")
     print(f"Min S measure {knowledge_type}: {min(tot_S_measure_general)}")
     print(f"GP with no predictions: {gp_no_pred_general}")
+
+    print(f"IC not found in dictionary: {tracker_count[0]} times")
+
+    
     
         
     # ROC graphs
@@ -553,13 +666,22 @@ def compute_benchmark_by_cafa(path, model, cafa, steps, current_datetime, IC_dic
     PRC_path = os.path.join(dir_tree['btp_dir_path'] + f"/benchmark_{cafa}/PRC_{cafa}", PRC_dir_name)
     if not os.path.exists(PRC_path):
         os.makedirs(PRC_path)
-                
+    
+    # Pure PRC
     make_PRC(tot_precision_NK, tot_recall_NK, tool_name, cafa, "NK", PRC_path)
     make_PRC(tot_precision_LK, tot_recall_LK, tool_name, cafa, "LK", PRC_path)
     make_PRC(tot_precision_general, tot_recall_general, tool_name, cafa, "general", PRC_path)
     
     make_multiPRC(tot_precision_NK, tot_recall_NK, tot_precision_LK, tot_recall_LK, 
                   tot_precision_general, tot_recall_general, tool_name, cafa, PRC_path)
+
+    # Weighted PRC
+    make_PRC(tot_IC_weighted_precision_NK, tot_IC_weighted_recall_NK, tool_name, cafa, "NK", PRC_path, add_tag='_weighted')
+    make_PRC(tot_IC_weighted_precision_LK, tot_IC_weighted_recall_LK, tool_name, cafa, "LK", PRC_path, add_tag='_weighted')
+    make_PRC(tot_IC_weighted_precision_general, tot_IC_weighted_recall_general, tool_name, cafa, "general", PRC_path, add_tag='_weighted')
+    
+    make_multiPRC(tot_IC_weighted_precision_NK, tot_IC_weighted_recall_NK, tot_IC_weighted_precision_LK, tot_IC_weighted_recall_LK, 
+                  tot_IC_weighted_precision_general, tot_IC_weighted_recall_general, tool_name, cafa, PRC_path, add_tag='_weighted')
         
     
 
@@ -568,13 +690,21 @@ def compute_benchmark_by_cafa(path, model, cafa, steps, current_datetime, IC_dic
             f"S measure  for {tool_name}", 
             f"F1Score  for {tool_name}"
     ]
+
+    titles_weighted = [f"IC weighted Precision for {tool_name}", 
+            f"IC weighted Recall  for {tool_name}", 
+            f"IC weighted S measure  for {tool_name}", 
+            f"IC weighted F1Score  for {tool_name}"
+    ]
     
+
+    ########################################################################################
     NK_dir_name = f"NK_{tool_name}_{current_datetime}"
     NK_path = os.path.join(dir_tree['btp_dir_path'] + f"/benchmark_{cafa}/benchmark_NK_{cafa}", NK_dir_name)
     if not os.path.exists(NK_path):
         os.makedirs(NK_path)
 
-    # Only NK and LK
+    # Only NK pure measurements
     fig, axes = plt.subplots(2, 2, figsize=(10, 6), layout='constrained')
     axes = axes.flatten()  # Flatten the 2D array for easy iteration
     y_data = [tot_precision_NK, tot_recall_NK, tot_S_measure_NK, tot_F1score_NK]
@@ -598,7 +728,42 @@ def compute_benchmark_by_cafa(path, model, cafa, steps, current_datetime, IC_dic
         # ax.grid(True)
     fig.suptitle(f'NK benchmark for {tool_name} in {cafa}', y=1.5)
     plt.savefig(f"{NK_path}/NK_benchmark_{tool_name}_{cafa}.png", format="png")
-    
+
+
+
+    # Only NK weighted measurements
+    fig, axes = plt.subplots(2, 2, figsize=(10, 6), layout='constrained')
+    axes = axes.flatten()  # Flatten the 2D array for easy iteration
+    y_data = [tot_IC_weighted_precision_NK, tot_IC_weighted_recall_NK, tot_S_measure_NK, tot_IC_weighted_F1_NK]
+    y1 = tot_misinformation_NK
+    y2 = tot_remaining_uncertainty_NK
+    # Loop through each subplot
+    for i, ax in enumerate(axes):
+        y = y_data[i]  # Select y data
+        
+        if i == 2:
+            # For S_measure, highlight the minimum
+            extremum_idx = np.argmin(y)
+        else:
+            # For others, highlight the maximum
+            extremum_idx = np.argmax(y)
+        max_x = thresholds[extremum_idx]  # X value of max
+        max_y = y[extremum_idx]  # Y value of max
+
+        ax.plot(thresholds, y)
+        if i == 2:
+            ax.plot(thresholds, y1)
+            ax.plot(thresholds, y2)
+        ax.scatter(max_x, max_y, color='red', s=100, label=f"{max_y:.5f}")  # Red dot for max
+        ax.set_title(titles_weighted[i])  # Set title
+        ax.legend()
+        # ax.grid(True)
+    fig.suptitle(f'NK IC weighted benchmark for {tool_name} in {cafa}', y=1.5)
+    plt.savefig(f"{NK_path}/NK_benchmark_{tool_name}_{cafa}_weighted.png", format="png")
+
+
+    ########################################################################################
+    # Only LK pure measurements
     LK_dir_name = f"LK_{tool_name}_{current_datetime}"
     LK_path = os.path.join(dir_tree['btp_dir_path'] + f"/benchmark_{cafa}/benchmark_LK_{cafa}", LK_dir_name)
     if not os.path.exists(LK_path):
@@ -629,6 +794,39 @@ def compute_benchmark_by_cafa(path, model, cafa, steps, current_datetime, IC_dic
     plt.subplots_adjust(top=0.9)  # Increase the top margin
     plt.savefig(f"{LK_path}/LK_benchmark_{tool_name}_{cafa}.png", format="png")
 
+
+    # Only LK weighted measurements
+    fig, axes = plt.subplots(2, 2, figsize=(10, 6), layout='constrained')
+    axes = axes.flatten()  # Flatten the 2D array for easy iteration
+    y_data = [tot_IC_weighted_precision_LK, tot_IC_weighted_recall_LK, tot_S_measure_LK, tot_IC_weighted_F1_LK]
+    y1 = tot_misinformation_LK
+    y2 = tot_remaining_uncertainty_LK
+    # Loop through each subplot
+    for i, ax in enumerate(axes):
+        y = y_data[i]  # Select y data
+        
+        if i == 2:
+            # For S_measure, highlight the minimum
+            extremum_idx = np.argmin(y)
+        else:
+            # For others, highlight the maximum
+            extremum_idx = np.argmax(y)
+        max_x = thresholds[extremum_idx]  # X value of max
+        max_y = y[extremum_idx]  # Y value of max
+
+        ax.plot(thresholds, y)
+        if i == 2:
+            ax.plot(thresholds, y1)
+            ax.plot(thresholds, y2)
+        ax.scatter(max_x, max_y, color='red', s=100, label=f"{max_y:.5f}")  # Red dot for max
+        ax.set_title(titles_weighted[i])  # Set title
+        ax.legend()
+        # ax.grid(True)
+    fig.suptitle(f'LK IC weighted benchmark for {tool_name} in {cafa}', y=1.5)
+    plt.savefig(f"{LK_path}/LK_benchmark_{tool_name}_{cafa}_weighted.png", format="png")
+
+
+    ########################################################################################
 
     curve_colors = ["blue", "green"]
     highlight_colors = ["red", "orange"]
@@ -669,6 +867,43 @@ def compute_benchmark_by_cafa(path, model, cafa, steps, current_datetime, IC_dic
     fig.suptitle(f'Comprehensive benchmark for {tool_name} in {cafa}', fontsize=16)
     plt.subplots_adjust(top=0.9)  # Increase the top margin
     plt.savefig(f"{comprehensive_path}/NK_LK_benchmark_{tool_name}_{cafa}.png", format="png")
+
+    # Weighted version
+    # Create subplots
+
+    fig, axes = plt.subplots(2, 2, figsize=(10, 6), layout='constrained')
+    axes = axes.flatten()  # Flatten the 2D array for easy iteration
+    y_data_1 = [tot_IC_weighted_precision_NK, tot_IC_weighted_recall_NK, tot_S_measure_NK, tot_IC_weighted_F1_NK]
+    y_data_2 = [tot_IC_weighted_precision_LK, tot_IC_weighted_recall_LK, tot_S_measure_LK, tot_IC_weighted_F1_LK]
+    label = [["w precision NK", "w precision LK"], ["w recall NK", "w recall LK"], \
+             ["w S measure NK", "w S measure LK"], ["w F1score NK", "w F1score LK"]]
+    # Loop through each subplot
+    for i, ax in enumerate(axes):
+        ys = [y_data_1[i], y_data_2[i]]
+
+        for j, y in enumerate(ys):
+            if i == 2:  # For S-measure, highlight minimum
+                idx = np.argmin(y)
+            else:       # For others, highlight maximum
+                idx = np.argmax(y)
+
+            x_val, y_val = thresholds[idx], y[idx]
+
+            # Plot the curve
+            ax.plot(thresholds, y, label=label[i][j], color=curve_colors[j])
+            # Highlight the point
+            ax.scatter(x_val, y_val, color=highlight_colors[j], s=100, label=f"{y_val:.5f}")
+
+        ax.set_title(titles_weighted[i])
+        ax.legend()
+        # ax.grid(True)
+    # Adjust layout
+    plt.tight_layout()
+    fig.suptitle(f'Comprehensive weighted benchmark for {tool_name} in {cafa}', fontsize=16)
+    plt.subplots_adjust(top=0.9)  # Increase the top margin
+    plt.savefig(f"{comprehensive_path}/weighted_NK_LK_benchmark_{tool_name}_{cafa}.png", format="png")
+
+
     #######################################################################
     
     general_dir_name = f"general_{tool_name}_{current_datetime}"
@@ -701,6 +936,37 @@ def compute_benchmark_by_cafa(path, model, cafa, steps, current_datetime, IC_dic
     plt.savefig(f"{general_path}/general_benchmark_{tool_name}_{cafa}.png", format="png")
 
 
+    # Only general weighted measurements
+    fig, axes = plt.subplots(2, 2, figsize=(10, 6), layout='constrained')
+    axes = axes.flatten()  # Flatten the 2D array for easy iteration
+    y_data = [tot_IC_weighted_precision_general, tot_IC_weighted_recall_general, tot_S_measure_general, tot_IC_weighted_F1_general]
+    y1 = tot_misinformation_general
+    y2 = tot_remaining_uncertainty_general
+    # Loop through each subplot
+    for i, ax in enumerate(axes):
+        y = y_data[i]  # Select y data
+        
+        if i == 2:
+            # For S_measure, highlight the minimum
+            extremum_idx = np.argmin(y)
+        else:
+            # For others, highlight the maximum
+            extremum_idx = np.argmax(y)
+        max_x = thresholds[extremum_idx]  # X value of max
+        max_y = y[extremum_idx]  # Y value of max
+
+        ax.plot(thresholds, y)
+        if i == 2:
+            ax.plot(thresholds, y1)
+            ax.plot(thresholds, y2)
+        ax.scatter(max_x, max_y, color='red', s=100, label=f"{max_y:.5f}")  # Red dot for max
+        ax.set_title(titles_weighted[i])  # Set title
+        ax.legend()
+        # ax.grid(True)
+    fig.suptitle(f'general IC weighted benchmark for {tool_name} in {cafa}', y=1.5)
+    plt.savefig(f"{general_path}/general_benchmark_{tool_name}_{cafa}_weighted.png", format="png")
+
+
     curve_colors = ["blue", "green", "black"]
     highlight_colors = ["red", "orange", "yellow"]
     
@@ -711,7 +977,8 @@ def compute_benchmark_by_cafa(path, model, cafa, steps, current_datetime, IC_dic
     y_data_1 = [tot_precision_NK, tot_recall_NK, tot_S_measure_NK, tot_F1score_NK]
     y_data_2 = [tot_precision_LK, tot_recall_LK, tot_S_measure_LK, tot_F1score_LK]
     y_data_3 = [tot_precision_general, tot_recall_general, tot_S_measure_general, tot_F1score_general]
-    label = [["precision NK", "precision LK", "precision all"], ["recall NK", "recall LK", "recall all"], ["S measure NK", "S measure LK", "S measure all"], ["F1score NK", "F1score LK", "F1score all"]]
+    label = [["precision NK", "precision LK", "precision all"], ["recall NK", "recall LK", "recall all"], \
+             ["S measure NK", "S measure LK", "S measure all"], ["F1score NK", "F1score LK", "F1score all"]]
     # Loop through each subplot
     for i, ax in enumerate(axes):
         # Select y-values for this subplot
@@ -740,6 +1007,51 @@ def compute_benchmark_by_cafa(path, model, cafa, steps, current_datetime, IC_dic
     plt.subplots_adjust(top=0.9)  # Increase the top margin
     # comprehensive_path
     plt.savefig(f"{comprehensive_path}/comp_general_benchmark_{tool_name}_{cafa}.png", format="png")
+
+
+
+    # Create subplots weighted
+
+    fig, axes = plt.subplots(2, 2, figsize=(10, 6), layout='constrained')
+    axes = axes.flatten()  # Flatten the 2D array for easy iteration
+    y_data_1 = [tot_IC_weighted_precision_NK, tot_IC_weighted_recall_NK, \
+                tot_S_measure_NK, tot_IC_weighted_F1_NK]
+    y_data_2 = [tot_IC_weighted_precision_LK, tot_IC_weighted_recall_LK, \
+                tot_S_measure_LK, tot_IC_weighted_F1_LK]
+    y_data_3 = [tot_IC_weighted_precision_general, tot_IC_weighted_recall_general, \
+                tot_S_measure_general, tot_IC_weighted_F1_general]
+    label = [["w precision NK", "w precision LK", "w precision all"], ["w recall NK", "w recall LK", "w recall all"], \
+             ["w S measure NK", "w S measure LK", "w S measure all"], ["w F1score NK", "w F1score LK", "w F1score all"]]
+    # Loop through each subplot
+    for i, ax in enumerate(axes):
+        # Select y-values for this subplot
+        ys = [y_data_1[i], y_data_2[i], y_data_3[i]]
+        
+        # Loop through each curve (NK, LK, general)
+        for j, y in enumerate(ys):
+            if i == 2:  # S-measure: use minimum
+                idx = np.argmin(y)
+            else:       # Others: use maximum
+                idx = np.argmax(y)
+
+            x_val, y_val = thresholds[idx], y[idx]
+
+            # Plot the curve
+            ax.plot(thresholds, y, label=label[i][j], color=curve_colors[j])
+            # Highlight the point
+            ax.scatter(x_val, y_val, color=highlight_colors[j], s=100, label=f"{y_val:.5f}")
+
+        ax.set_title(titles_weighted[i])
+        ax.legend()
+        # ax.grid(True)
+    # Adjust layout
+    plt.tight_layout()
+    fig.suptitle(f'Overall benchmark for {tool_name} in {cafa}', fontsize=16)
+    plt.subplots_adjust(top=0.9)  # Increase the top margin
+    # comprehensive_path
+    plt.savefig(f"{comprehensive_path}/comp_general_benchmark_{tool_name}_{cafa}_weighted.png", format="png")
+
+
     #####################################
    
     
@@ -750,26 +1062,50 @@ def compute_benchmark_by_cafa(path, model, cafa, steps, current_datetime, IC_dic
     
     report_name = f"{report_dir_name}/general_report_{tool_name}_{cafa}.txt"
     with open(report_name, "w") as file:
+        
+        file.write(f"IC not found in dictionary: {tracker_count[0]} times\n\n")
+
         file.write(f"Max precision NK: {max(tot_precision_NK)}\n")
         file.write(f"Max recall NK: {max(tot_recall_NK)}\n")
-        file.write(f"Max F1score NK: {max(tot_FDR_NK)}\n")
-        file.write(f"Max FDR NK: {max(tot_F1score_NK)}\n")
-        print(f"Min S measure NK: {min(tot_S_measure_NK)}")
+        file.write(f"Max FDR NK: {max(tot_FDR_NK)}\n")
+        file.write(f"Max F1Score NK: {max(tot_F1score_NK)}\n")
+        file.write(f"Min S measure NK: {min(tot_S_measure_NK)}")
         file.write(f"GPs with no predictions NK: {gp_no_pred_NK}\n\n")
-        
+
+        file.write(f"Weighted max precision NK: {max(tot_IC_weighted_precision_NK)}\n")
+        file.write(f"Weighted max recall NK: {max(tot_IC_weighted_recall_NK)}\n")
+        file.write(f"Max misinformation NK: {max(tot_misinformation_NK)}\n")
+        file.write(f"Max remaining uncertainty NK: {max(tot_remaining_uncertainty_NK)}\n")
+        file.write(f"Weighted max F1Score NK: {max(tot_IC_weighted_F1_NK)}\n")
+        file.write(f"Min S measure NK: {min(tot_S_measure_NK)}")
+
+
         file.write(f"Max precision LK: {max(tot_precision_LK)}\n")
         file.write(f"Max recall LK: {max(tot_recall_LK)}\n")
-        file.write(f"Max F1score LK: {max(tot_F1score_LK)}\n")
-        file.write(f"Max FDR LK: {max(tot_FDR_LK)}\n")
-        print(f"Min S measure LK: {min(tot_S_measure_LK)}")
+        file.write(f"Max FDR LK: {max(tot_F1score_LK)}\n")
+        file.write(f"Max F1score LK: {max(tot_FDR_LK)}\n")
         file.write(f"GPs with no predictions LK: {gp_no_pred_LK}\n\n")
+
+        file.write(f"Weighted max precision LK: {max(tot_IC_weighted_precision_LK)}\n")
+        file.write(f"Weighted max recall LK: {max(tot_IC_weighted_recall_LK)}\n")
+        file.write(f"Max misinformation LK: {max(tot_misinformation_LK)}\n")
+        file.write(f"Max remaining uncertainty LK: {max(tot_remaining_uncertainty_LK)}\n")
+        file.write(f"Weighted max F1Score LK: {max(tot_IC_weighted_F1_LK)}\n")
+        file.write(f"Min S measure LK: {min(tot_S_measure_LK)}")
+
         
         file.write(f"Max precision general: {max(tot_precision_general)}\n")
         file.write(f"Max recall general: {max(tot_recall_general)}\n")
-        file.write(f"Max F1score general: {max(tot_F1score_general)}\n")
-        file.write(f"Max FDR general: {max(tot_FDR_general)}\n")
-        print(f"Min S measure general: {min(tot_S_measure_general)}")
+        file.write(f"Max FDR general: {max(tot_F1score_general)}\n")
+        file.write(f"Max F1score general: {max(tot_FDR_general)}\n")
         file.write(f"GPs with no predictions general: {gp_no_pred_general}\n\n")
+
+        file.write(f"Weighted max precision general: {max(tot_IC_weighted_precision_general)}\n")
+        file.write(f"Weighted max recall general: {max(tot_IC_weighted_recall_general)}\n")
+        file.write(f"Max misinformation general: {max(tot_misinformation_general)}\n")
+        file.write(f"Max remaining uncertainty general: {max(tot_remaining_uncertainty_general)}\n")
+        file.write(f"Weighted max F1Score general: {max(tot_IC_weighted_F1_general)}\n")
+        file.write(f"Min S measure general: {min(tot_S_measure_general)}")
             
         
         file.write(f"Steps: {steps}\n")
@@ -784,18 +1120,46 @@ def compute_benchmark_by_cafa(path, model, cafa, steps, current_datetime, IC_dic
         file.write("FDR in NK: \n" + ", ".join(map(str, tot_FDR_NK)) + "\n")
         file.write("S measure in NK: \n" + ", ".join(map(str, tot_S_measure_NK)) + "\n")
         file.write("F1score in NK: \n" + ", ".join(map(str, tot_F1score_NK)) + "\n")
+
+        file.write(f"\nNK results weighted\n")
+        file.write("Precision weighted in NK: \n" + ", ".join(map(str, tot_IC_weighted_precision_NK)) + "\n")
+        file.write("Recall weighted in NK: \n" + ", ".join(map(str, tot_IC_weighted_recall_NK)) + "\n")
+        file.write("Misinformation in NK: \n" + ", ".join(map(str, tot_misinformation_NK)) + "\n")
+        file.write("Remaining uncertainty in NK: \n" + ", ".join(map(str, tot_remaining_uncertainty_NK)) + "\n")
+        file.write("S measure in NK: \n" + ", ".join(map(str, tot_S_measure_NK)) + "\n")
+        file.write("F1score weighted in NK: \n" + ", ".join(map(str, tot_F1score_NK)) + "\n")
+
+
         file.write(f"\nLK results\n")
         file.write("Precision in LK: \n" + ", ".join(map(str, tot_precision_LK)) + "\n")
         file.write("Recall in LK: \n" + ", ".join(map(str, tot_recall_LK)) + "\n")
         file.write("FDR in LK: \n" + ", ".join(map(str, tot_FDR_LK)) + "\n")
         file.write("S measure in LK: \n" + ", ".join(map(str, tot_S_measure_LK)) + "\n")
         file.write("F1score in LK: \n" + ", ".join(map(str, tot_F1score_LK)) + "\n")
+
+        file.write(f"\nLK results weighted\n")
+        file.write("Precision weighted in LK: \n" + ", ".join(map(str, tot_IC_weighted_precision_LK)) + "\n")
+        file.write("Recall weighted in LK: \n" + ", ".join(map(str, tot_IC_weighted_recall_LK)) + "\n")
+        file.write("Misinformation in LK: \n" + ", ".join(map(str, tot_misinformation_LK)) + "\n")
+        file.write("Remaining uncertainty in LK: \n" + ", ".join(map(str, tot_remaining_uncertainty_LK)) + "\n")
+        file.write("S measure in LK: \n" + ", ".join(map(str, tot_S_measure_LK)) + "\n")
+        file.write("F1score weighted in LK: \n" + ", ".join(map(str, tot_F1score_LK)) + "\n")
+
+
         file.write(f"\nGeneral results\n")
         file.write("Precision in general: \n" + ", ".join(map(str, tot_precision_general)) + "\n")
         file.write("Recall in general: \n" + ", ".join(map(str, tot_recall_general)) + "\n")
         file.write("FDR in general: \n" + ", ".join(map(str, tot_FDR_general)) + "\n")
         file.write("S measure in general: \n" + ", ".join(map(str, tot_S_measure_general)) + "\n")
         file.write("F1score in general: \n" + ", ".join(map(str, tot_F1score_general)) + "\n")
+
+        file.write(f"\ngeneral results weighted\n")
+        file.write("Precision weighted in general: \n" + ", ".join(map(str, tot_IC_weighted_precision_general)) + "\n")
+        file.write("Recall weighted in general: \n" + ", ".join(map(str, tot_IC_weighted_recall_general)) + "\n")
+        file.write("Misinformation in general: \n" + ", ".join(map(str, tot_misinformation_general)) + "\n")
+        file.write("Remaining uncertainty in general: \n" + ", ".join(map(str, tot_remaining_uncertainty_general)) + "\n")
+        file.write("S measure in general: \n" + ", ".join(map(str, tot_S_measure_general)) + "\n")
+        file.write("F1score weighted in general: \n" + ", ".join(map(str, tot_F1score_general)) + "\n")
 
     print(f"Report saved as {report_name}")
 

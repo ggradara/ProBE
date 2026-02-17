@@ -1,3 +1,4 @@
+import json
 import pandas as pd
 import numpy as np
 from tqdm import tqdm
@@ -9,6 +10,63 @@ import argparse
 from datetime import datetime
 
 start_time = time.time()
+
+tracker_count = [0]
+_MISSING = object()
+
+
+def count_defaults_in_get(data_dict, target_key, tracker, default):
+    # Let's say we're checking this in a loop or function
+    result = data_dict.get(target_key, _MISSING)
+    
+    if result is _MISSING:
+        tracker[0] += 1
+        # Handle the actual default logic here
+        result = default
+        
+    return result
+
+
+def compute_IC_metrics(TP_predictions, FP_predictions, FN_predictions, IC_dict, default_IC=5):
+    # Da valutare quante volte viene utilizzato il default
+    
+    # GO_pred = set(GO_pred)
+    # GO_gt = group_gt['GO_ID']
+    # GO_gt = set(GO_gt)
+
+    # TP_predictions = list(GO_pred & GO_gt)  # The TP predictions are the shared ones
+    # FP_predictions = list(GO_pred - GO_gt)  # Predictions that are not in the gt
+    # FN_predictions = list(GO_gt - GO_pred)  # Predictions missed from the gt
+
+    # FP_IC_values = np.array([IC_dict.get(prediction, default_IC) for prediction in FP_predictions])
+    # FN_IC_values = np.array([IC_dict.get(prediction, default_IC) for prediction in FN_predictions])
+    
+    # FP_IC_values = misinformation 
+    misinformation = sum(np.array([count_defaults_in_get(IC_dict, prediction, tracker_count, default_IC) for prediction in FP_predictions]))
+    # FN_IC_values = remaining_uncertainty
+    remaining_uncertainty = sum(np.array([count_defaults_in_get(IC_dict, prediction, tracker_count, default_IC) for prediction in FN_predictions]))
+    
+    S_measure = np.sqrt(np.power(np.sum(misinformation), 2) + np.power(np.sum(remaining_uncertainty), 2))
+
+    # Compute wighted precision, recall and F1
+
+    TP_IC_values = sum(np.array([count_defaults_in_get(IC_dict, prediction, tracker_count, default_IC) for prediction in TP_predictions]))
+    
+    if (TP_IC_values + misinformation) == 0:  # 0 div check precision
+        IC_weighted_precision = 0
+    else:
+        IC_weighted_precision = TP_IC_values/(TP_IC_values + misinformation)
+    if (TP_IC_values + remaining_uncertainty) == 0:  # 0 div check recall
+        IC_weighted_recall = 0
+    else:
+        IC_weighted_recall = TP_IC_values/(TP_IC_values + remaining_uncertainty)  
+    if (IC_weighted_precision + IC_weighted_recall) == 0:  # 0 div check F1 score
+        IC_weighted_F1 = 0
+    else:
+        IC_weighted_F1 = 2*(IC_weighted_precision * IC_weighted_recall)/(IC_weighted_precision + IC_weighted_recall)
+
+
+    return IC_weighted_precision, IC_weighted_recall, IC_weighted_F1, misinformation, remaining_uncertainty, S_measure
 
 
 def log_list(list_to_log, filename, message=""):
@@ -48,7 +106,7 @@ def log_list(list_to_log, filename, message=""):
 
 
 
-def compute_benchmark_by_cafa(path, model, cafa, steps, current_datetime, dir_tree):
+def compute_benchmark_by_cafa(path, model, cafa, steps, current_datetime, dir_tree, IC_dict):
 
     tool_name = model
     
@@ -71,12 +129,29 @@ def compute_benchmark_by_cafa(path, model, cafa, steps, current_datetime, dir_tr
     F1score_across_aspects_NK = []
     gp_across_aspects_NK = []
 
+    ICw_precision_across_aspects_NK = []
+    ICw_recall_across_aspects_NK = []
+    misinformation_across_aspects_NK = []
+    remaining_uncertainty_across_aspects_NK = []
+    ICw_F1score_across_aspects_NK = []
+    S_measure_across_aspects_NK = []
+
+
     precision_across_aspects_LK = []
     recall_across_aspects_LK = []
     FDR_across_aspects_LK = []
     F1score_across_aspects_LK = []
     gp_across_aspects_LK = []
     
+    ICw_precision_across_aspects_LK = []
+    ICw_recall_across_aspects_LK = []
+    misinformation_across_aspects_LK = []
+    remaining_uncertainty_across_aspects_LK = []
+    ICw_F1score_across_aspects_LK = []
+    S_measure_across_aspects_LK = []
+
+
+
     for aspect in aspects:
 
         tool_predictions_full = pd.read_csv(tool_predictions_address, sep="\t")
@@ -100,6 +175,13 @@ def compute_benchmark_by_cafa(path, model, cafa, steps, current_datetime, dir_tr
         tot_F1score_NK = []
         tot_FDR_NK = []
 
+        tot_IC_weighted_precision_NK = []
+        tot_IC_weighted_recall_NK = []
+        tot_IC_weighted_F1_NK = []
+        tot_misinformation_NK = []
+        tot_remaining_uncertainty_NK = []
+        tot_S_measure_NK = []
+
 
         print(f"Benchmark evaluator for {tool_name} in {cafa}")
 
@@ -110,6 +192,7 @@ def compute_benchmark_by_cafa(path, model, cafa, steps, current_datetime, dir_tr
             total_FN_NK = 0
             total_P_NK = 0
             gp_no_pred_NK = 0  # GPs with no predictions
+
             
             tp_thresh = tool_predictions[tool_predictions["Score"]>threshold]
             tp_grouped = tp_thresh.groupby('Query_ID')
@@ -154,18 +237,29 @@ def compute_benchmark_by_cafa(path, model, cafa, steps, current_datetime, dir_tr
             
             tot_precision_NK.append(precision)
             tot_recall_NK.append(recall)
-
             tot_F1score_NK.append(F1_score)
             tot_FDR_NK.append(FDR)
+
+            IC_weighted_precision, IC_weighted_recall, IC_weighted_F1, misinformation, \
+            remaining_uncertainty, S_measure = compute_IC_metrics(TP_predictions, FP_predictions, 
+                                                          FN_predictions, IC_dict, default_IC=5)
+
+            tot_IC_weighted_precision_NK.append(IC_weighted_precision)
+            tot_IC_weighted_recall_NK.append(IC_weighted_recall)
+            tot_misinformation_NK.append(misinformation)
+            tot_remaining_uncertainty_NK.append(remaining_uncertainty)
+            tot_IC_weighted_F1_NK.append(IC_weighted_F1)
+            tot_S_measure_NK.append(S_measure)
 
         NK_time = time.time()
         elapsed_time = NK_time - start_time  # End timer NK
         print(f"Elapsed time: {elapsed_time:.3f} seconds to process NK cycle")
         
-        print(f"Max precision {knowledge_type}: {max(tot_precision_NK)}")
-        print(f"Max recall {knowledge_type}: {max(tot_recall_NK)}")
-        print(f"Max F1score {knowledge_type}: {max(tot_F1score_NK)}")
-        print(f"Max FDR {knowledge_type}: {max(tot_FDR_NK)}")
+        print(f"Max precision {knowledge_type} for aspect {aspect}: {max(tot_precision_NK)}")
+        print(f"Max recall {knowledge_type} for aspect {aspect}: {max(tot_recall_NK)}")
+        print(f"Max F1score {knowledge_type} for aspect {aspect}: {max(tot_F1score_NK)}")
+        print(f"Max FDR {knowledge_type} for aspect {aspect}: {max(tot_FDR_NK)}")
+        print(f"Min S measure {knowledge_type} for aspect {aspect}: {min(tot_S_measure_NK)}")
         print(f"GP with no predictions: {gp_no_pred_NK}")
         
         
@@ -174,6 +268,13 @@ def compute_benchmark_by_cafa(path, model, cafa, steps, current_datetime, dir_tr
         FDR_across_aspects_NK.append(tot_FDR_NK)
         F1score_across_aspects_NK.append(tot_F1score_NK)
         gp_across_aspects_NK.append(gp_no_pred_NK)
+
+        ICw_precision_across_aspects_NK.append(tot_IC_weighted_precision_NK)
+        ICw_recall_across_aspects_NK.append(tot_IC_weighted_recall_NK)
+        misinformation_across_aspects_NK.append(tot_misinformation_NK)
+        remaining_uncertainty_across_aspects_NK.append(tot_remaining_uncertainty_NK)
+        ICw_F1score_across_aspects_NK.append(tot_IC_weighted_F1_NK)
+        S_measure_across_aspects_NK.append(tot_S_measure_NK)
 
 
         # Read the file and get the dataframe
@@ -193,6 +294,13 @@ def compute_benchmark_by_cafa(path, model, cafa, steps, current_datetime, dir_tr
         tot_F1score_LK = []
         tot_FDR_LK = []
         
+        tot_IC_weighted_precision_LK = []
+        tot_IC_weighted_recall_LK = []
+        tot_IC_weighted_F1_LK = []
+        tot_misinformation_LK = []
+        tot_remaining_uncertainty_LK = []
+        tot_S_measure_LK = []
+
 
         print(f"Benchmark evaluator for {tool_name} in {cafa}")
 
@@ -258,6 +366,19 @@ def compute_benchmark_by_cafa(path, model, cafa, steps, current_datetime, dir_tr
             tot_F1score_LK.append(F1_score)
             tot_FDR_LK.append(FDR)
 
+
+            IC_weighted_precision, IC_weighted_recall, IC_weighted_F1, misinformation, \
+            remaining_uncertainty, S_measure = compute_IC_metrics(TP_predictions, FP_predictions, 
+                                                          FN_predictions, IC_dict, default_IC=5)
+
+            tot_IC_weighted_precision_LK.append(IC_weighted_precision)
+            tot_IC_weighted_recall_LK.append(IC_weighted_recall)
+            tot_misinformation_LK.append(misinformation)
+            tot_remaining_uncertainty_LK.append(remaining_uncertainty)
+            tot_IC_weighted_F1_LK.append(IC_weighted_F1)
+            tot_S_measure_LK.append(S_measure)
+
+
         LK_time = time.time()
         elapsed_time = LK_time - NK_time  # End timer LK
         tot_elapsed_time = LK_time - start_time
@@ -268,18 +389,32 @@ def compute_benchmark_by_cafa(path, model, cafa, steps, current_datetime, dir_tr
         print(tot_recall_LK)
         print(f"Max F1score {knowledge_type} for aspect {aspect}: {max(tot_F1score_LK)}")
         print(f"Max FDR {knowledge_type} for aspect {aspect}: {max(tot_FDR_LK)}")
+        print(f"Min S measure {knowledge_type} for aspect {aspect}: {min(tot_S_measure_LK)}")
         
         precision_across_aspects_LK.append(tot_precision_LK)
         recall_across_aspects_LK.append(tot_recall_LK)
         FDR_across_aspects_LK.append(tot_FDR_LK)
         F1score_across_aspects_LK.append(tot_F1score_LK)
         gp_across_aspects_LK.append(gp_no_pred_LK)
+
+        ICw_precision_across_aspects_LK.append(tot_IC_weighted_precision_LK)
+        ICw_recall_across_aspects_LK.append(tot_IC_weighted_recall_LK)
+        misinformation_across_aspects_LK.append(tot_misinformation_LK)
+        remaining_uncertainty_across_aspects_LK.append(tot_remaining_uncertainty_LK)
+        ICw_F1score_across_aspects_LK.append(tot_IC_weighted_F1_LK)
+        S_measure_across_aspects_LK.append(tot_S_measure_LK)
         
         
-        titles = [f"Precision  for {tool_name}", 
-                f"Recall  for {tool_name}", 
-                f"FDR  for {tool_name}", 
-                f"F1Score  for {tool_name}"
+        titles = [f"Precision for {tool_name}", 
+                f"Recall for {tool_name}", 
+                f"FDR for {tool_name}", 
+                f"F1Score for {tool_name}"
+        ]
+
+        titles_weighted = [f"Precision weighted for {tool_name}", 
+                f"Recall weighted  for {tool_name}", 
+                f"S measure for {tool_name}", 
+                f"F1Score weighted for {tool_name}"
         ]
 
 
@@ -293,27 +428,64 @@ def compute_benchmark_by_cafa(path, model, cafa, steps, current_datetime, dir_tr
         if not os.path.exists(NK_path_o4e):
             os.makedirs(NK_path_o4e)
 
+        ### Inutili!!!! Rappresentano i valori dell'ultimo Aspect!!! senza essere una rappresentazione 
+        # complessiva oppure una triplice rappresentazione singola!
 
-        fig, axes = plt.subplots(2, 2, figsize=(10, 6), layout='constrained')
-        axes = axes.flatten()  # Flatten the 2D array for easy iteration
-        y_data = [tot_precision_NK, tot_recall_NK, tot_FDR_NK, tot_F1score_NK]
-        # Loop through each subplot
-        for i, ax in enumerate(axes):
-            y = y_data[i]  # Select y data
-            max_idx = np.argmax(y)  # Get index of max value
-            max_x = thresholds[max_idx]  # X value of max
-            max_y = y[max_idx]  # Y value of max
+        # # Pure measures NK
+        # fig, axes = plt.subplots(2, 2, figsize=(10, 6), layout='constrained')
+        # axes = axes.flatten()  # Flatten the 2D array for easy iteration
+        # y_data = [tot_precision_NK, tot_recall_NK, tot_FDR_NK, tot_F1score_NK]
+        # # Loop through each subplot
+        # for i, ax in enumerate(axes):
+        #     y = y_data[i]  # Select y data
+        #     max_idx = np.argmax(y)  # Get index of max value
+        #     max_x = thresholds[max_idx]  # X value of max
+        #     max_y = y[max_idx]  # Y value of max
 
-            ax.plot(thresholds, y)
-            ax.scatter(max_x, max_y, color='red', s=100, label=f"{max_y:.5f}")  # Red dot for max
-            ax.set_title(titles[i])  # Set title
-            ax.legend()
-            # ax.grid(True)
-        fig.suptitle(f'NK benchmark for {tool_name} in {cafa} for aspect {aspect}', fontsize=16)
-        plt.subplots_adjust(top=0.9)
-        plt.savefig(f"{NK_path_o4e}/NK_benchmark_{tool_name}_{aspect}_{cafa}.png", format="png")
+        #     ax.plot(thresholds, y)
+        #     ax.scatter(max_x, max_y, color='red', s=100, label=f"{max_y:.5f}")  # Red dot for max
+        #     ax.set_title(titles[i])  # Set title
+        #     ax.legend()
+        #     # ax.grid(True)
+        # fig.suptitle(f'NK benchmark for {tool_name} in {cafa} for aspect {aspect}', fontsize=16)
+        # plt.subplots_adjust(top=0.9)
+        # plt.savefig(f"{NK_path_o4e}/NK_benchmark_{tool_name}_{aspect}_{cafa}.png", format="png")
         
+        # # weighted measures NK
+        # fig, axes = plt.subplots(2, 2, figsize=(10, 6), layout='constrained')
+        # axes = axes.flatten()  # Flatten the 2D array for easy iteration
+        # y_data = [tot_precision_NK, tot_recall_NK, tot_FDR_NK, tot_F1score_NK]
+
+        # y_data = [tot_IC_weighted_precision_NK, tot_IC_weighted_recall_NK, tot_S_measure_NK, tot_IC_weighted_F1_NK]
+        # y1 = tot_misinformation_NK
+        # y2 = tot_remaining_uncertainty_NK
+
+        # # Loop through each subplot
+        # for i, ax in enumerate(axes):
+        #     y = y_data[i]  # Select y data
         
+        #     if i == 2:
+        #         # For S_measure, highlight the minimum
+        #         extremum_idx = np.argmin(y)
+        #     else:
+        #         # For others, highlight the maximum
+        #         extremum_idx = np.argmax(y)
+        #     max_x = thresholds[extremum_idx]  # X value of max
+        #     max_y = y[extremum_idx]  # Y value of max
+
+        #     ax.plot(thresholds, y)
+        #     if i == 2:
+        #         ax.plot(thresholds, y1)
+        #         ax.plot(thresholds, y2)
+        #     ax.scatter(max_x, max_y, color='red', s=100, label=f"{max_y:.5f}")  # Red dot for max
+        #     ax.set_title(titles_weighted[i])  # Set title
+        #     ax.legend()
+        #     # ax.grid(True)
+        # fig.suptitle(f'NK weighted benchmark for {tool_name} in {cafa} for aspect {aspect}', fontsize=16)
+        # plt.subplots_adjust(top=0.9)
+        # plt.savefig(f"{NK_path_o4e}/NK_benchmark_{tool_name}_{aspect}_{cafa}_weighted.png", format="png")
+
+
         LK_dir_name = f"LK_by_aspect_{tool_name}_{current_datetime}"
         LK_path = os.path.join(dir_tree['btp_dir_path'] + f"/benchmark_{cafa}/by_aspect/LK_by_aspect", LK_dir_name)
         if not os.path.exists(LK_path):
@@ -324,24 +496,58 @@ def compute_benchmark_by_cafa(path, model, cafa, steps, current_datetime, dir_tr
         if not os.path.exists(LK_path_o4e):
             os.makedirs(LK_path_o4e)
 
-        fig, axes = plt.subplots(2, 2, figsize=(10, 6), layout='constrained')
-        axes = axes.flatten()  # Flatten the 2D array for easy iteration
-        y_data = [tot_precision_LK, tot_recall_LK, tot_FDR_LK, tot_F1score_LK]
-        # Loop through each subplot
-        for i, ax in enumerate(axes):
-            y = y_data[i]  # Select y data
-            max_idx = np.argmax(y)  # Get index of max value
-            max_x = thresholds[max_idx]  # X value of max
-            max_y = y[max_idx]  # Y value of max
+        # # Pure measures LK
+        # fig, axes = plt.subplots(2, 2, figsize=(10, 6), layout='constrained')
+        # axes = axes.flatten()  # Flatten the 2D array for easy iteration
+        # y_data = [tot_precision_LK, tot_recall_LK, tot_FDR_LK, tot_F1score_LK]
+        # # Loop through each subplot
+        # for i, ax in enumerate(axes):
+        #     y = y_data[i]  # Select y data
+        #     max_idx = np.argmax(y)  # Get index of max value
+        #     max_x = thresholds[max_idx]  # X value of max
+        #     max_y = y[max_idx]  # Y value of max
 
-            ax.plot(thresholds, y)
-            ax.scatter(max_x, max_y, color='red', s=100, label=f"{max_y:.5f}")  # Red dot for max
-            ax.set_title(titles[i])  # Set title
-            ax.legend()
-            # ax.grid(True)
-        fig.suptitle(f'LK benchmark for {tool_name} in {cafa}', fontsize=16)
-        plt.subplots_adjust(top=0.9)  # Increase the top margin
-        plt.savefig(f"{LK_path_o4e}/LK_benchmark_{tool_name}_{aspect}_{cafa}.png", format="png")
+        #     ax.plot(thresholds, y)
+        #     ax.scatter(max_x, max_y, color='red', s=100, label=f"{max_y:.5f}")  # Red dot for max
+        #     ax.set_title(titles[i])  # Set title
+        #     ax.legend()
+        #     # ax.grid(True)
+        # fig.suptitle(f'LK benchmark for {tool_name} in {cafa}', fontsize=16)
+        # plt.subplots_adjust(top=0.9)  # Increase the top margin
+        # plt.savefig(f"{LK_path_o4e}/LK_benchmark_{tool_name}_{aspect}_{cafa}.png", format="png")
+
+
+        # # weighted measures LK
+        # fig, axes = plt.subplots(2, 2, figsize=(10, 6), layout='constrained')
+        # axes = axes.flatten()  # Flatten the 2D array for easy iteration
+        # y_data = [tot_IC_weighted_precision_LK, tot_IC_weighted_recall_LK, tot_S_measure_LK, tot_IC_weighted_F1_LK]
+        # y1 = tot_misinformation_LK
+        # y2 = tot_remaining_uncertainty_LK
+
+        # # Loop through each subplot
+        # for i, ax in enumerate(axes):
+        #     y = y_data[i]  # Select y data
+        
+        #     if i == 2:
+        #         # For S_measure, highlight the minimum
+        #         extremum_idx = np.argmin(y)
+        #     else:
+        #         # For others, highlight the maximum
+        #         extremum_idx = np.argmax(y)
+        #     max_x = thresholds[extremum_idx]  # X value of max
+        #     max_y = y[extremum_idx]  # Y value of max
+
+        #     ax.plot(thresholds, y)
+        #     if i == 2:
+        #         ax.plot(thresholds, y1)
+        #         ax.plot(thresholds, y2)
+        #     ax.scatter(max_x, max_y, color='red', s=100, label=f"{max_y:.5f}")  # Red dot for max
+        #     ax.set_title(titles_weighted[i])  # Set title
+        #     ax.legend()
+        #     # ax.grid(True)
+        # fig.suptitle(f'LK weighted benchmark for {tool_name} in {cafa} for aspect {aspect}', fontsize=16)
+        # plt.subplots_adjust(top=0.9)
+        # plt.savefig(f"{LK_path_o4e}/LK_benchmark_{tool_name}_{aspect}_{cafa}_weighted.png", format="png")
 
 
     # NK graph
@@ -349,6 +555,8 @@ def compute_benchmark_by_cafa(path, model, cafa, steps, current_datetime, dir_tr
     highlight_colors = ["#004c99", "#800000", "#005c00"]
     
     # Create subplots
+
+    # Triple pure measurements NK
     fig, axes = plt.subplots(2, 2, figsize=(10, 6), layout='constrained')
     axes = axes.flatten()  # Flatten the 2D array for easy iteration
     y_data_1 = [precision_across_aspects_NK[0], recall_across_aspects_NK[0], FDR_across_aspects_NK[0], F1score_across_aspects_NK[0]]
@@ -391,6 +599,146 @@ def compute_benchmark_by_cafa(path, model, cafa, steps, current_datetime, dir_tr
     fig.suptitle(f'Comprehensive benchmark for {tool_name} in NK {cafa}', fontsize=16)
     plt.subplots_adjust(top=0.9)  # Increase the top margin
     plt.savefig(f"{NK_path}/benchmark_by_aspect_{tool_name}_{cafa}_NK.png", format="png")
+
+
+    # Triple weighted measurements NK
+    fig, axes = plt.subplots(2, 2, figsize=(10, 6), layout='constrained')
+    axes = axes.flatten()  # Flatten the 2D array for easy iteration
+    y_data_1 = [ICw_precision_across_aspects_NK[0], ICw_recall_across_aspects_NK[0], \
+                S_measure_across_aspects_NK[0], ICw_F1score_across_aspects_NK[0]]
+    y_data_2 = [ICw_precision_across_aspects_NK[1], ICw_recall_across_aspects_NK[1], \
+                S_measure_across_aspects_NK[1], ICw_F1score_across_aspects_NK[1]]
+    y_data_3 = [ICw_precision_across_aspects_NK[2], ICw_recall_across_aspects_NK[2], \
+                S_measure_across_aspects_NK[2], ICw_F1score_across_aspects_NK[2]]
+    label = [f"Aspect M NK", f"Aspect C NK", f"Aspect P NK"]
+
+    # Loop through each subplot
+    for i, ax in enumerate(axes):
+        # Get data for both curves
+        y1 = y_data_1[i]
+        y2 = y_data_2[i]
+        y3 = y_data_3[i]
+
+
+        if i == 2:
+            # Find extr values
+            extr_idx_1 = np.argmin(y1)
+            extr_x_1, extr_y_1 = thresholds[extr_idx_1], y1[extr_idx_1]
+
+            extr_idx_2 = np.argmin(y2)
+            extr_x_2, extr_y_2 = thresholds[extr_idx_2], y2[extr_idx_2]
+            
+            extr_idx_3 = np.argmin(y3)
+            extr_x_3, extr_y_3 = thresholds[extr_idx_3], y3[extr_idx_3]
+        else:
+            # Find extr values
+            extr_idx_1 = np.argmax(y1)
+            extr_x_1, extr_y_1 = thresholds[extr_idx_1], y1[extr_idx_1]
+
+            extr_idx_2 = np.argmax(y2)
+            extr_x_2, extr_y_2 = thresholds[extr_idx_2], y2[extr_idx_2]
+            
+            extr_idx_3 = np.argmax(y3)
+            extr_x_3, extr_y_3 = thresholds[extr_idx_3], y3[extr_idx_3]
+
+        # Plot both curves
+        ax.plot(thresholds, y1, label=label[0], color=curve_colors[0])
+        ax.plot(thresholds, y2, label=label[1], color=curve_colors[1])
+        ax.plot(thresholds, y3, label=label[2], color=curve_colors[2])
+
+        # Highlight extr values with different colors
+        ax.scatter(extr_x_1, extr_y_1, color=highlight_colors[0], s=70,  label=f"{extr_y_1:.5f}")
+        ax.scatter(extr_x_2, extr_y_2, color=highlight_colors[1], s=70,  label=f"{extr_y_2:.5f}")
+        ax.scatter(extr_x_3, extr_y_3, color=highlight_colors[2], s=70,  label=f"{extr_y_3:.5f}")
+        
+        # Set title, legend, and grid
+        ax.set_title(titles_weighted[i])
+        ax.legend()
+        # ax.grid(True)
+        
+    # Adjust layout
+    fig.suptitle(f'Comprehensive weighted benchmark for {tool_name} in NK {cafa}', fontsize=16)
+    plt.subplots_adjust(top=0.9)  # Increase the top margin
+    plt.savefig(f"{NK_path}/benchmark_by_aspect_{tool_name}_{cafa}_NK_weighted.png", format="png")
+
+    titles_mi_ru_S = [f"Misinformation for {tool_name}", 
+                f"Remaining uncertainty  for {tool_name}", 
+                f"S measure for {tool_name}"
+        ]
+    
+    # Misinformation and remaining uncertainty version NK
+    fig, axes = plt.subplots(1, 3, figsize=(10, 6), layout='constrained')
+    axes = axes.flatten()  # Flatten the 2D array for easy iteration
+    y_data_1 = [misinformation_across_aspects_NK[0], remaining_uncertainty_across_aspects_NK[0],\
+                S_measure_across_aspects_NK[0]]
+    y_data_2 = [misinformation_across_aspects_NK[1], remaining_uncertainty_across_aspects_NK[1], \
+                S_measure_across_aspects_NK[1]]
+    y_data_3 = [misinformation_across_aspects_NK[2], remaining_uncertainty_across_aspects_NK[2], \
+                S_measure_across_aspects_NK[2]]
+    label = [f"Aspect M NK", f"Aspect C NK", f"Aspect P NK"]
+
+    """
+    y_data = [tot_IC_weighted_precision_NK, tot_IC_weighted_recall_NK, tot_S_measure_NK, tot_IC_weighted_F1_NK]
+    y1 = tot_misinformation_NK
+    y2 = tot_remaining_uncertainty_NK
+
+    ICw_precision_across_aspects_LK.append(tot_IC_weighted_precision_LK)
+    ICw_recall_across_aspects_LK.append(tot_IC_weighted_recall_LK)
+    misinformation_across_aspects_LK.append(tot_misinformation_LK)
+    remaining_uncertainty_across_aspects_LK.append(tot_remaining_uncertainty_LK)
+    ICw_F1score_across_aspects_LK.append(tot_IC_weighted_F1_LK)
+    S_measure_across_aspects_LK.append(tot_S_measure_LK)
+    """
+
+    # Loop through each subplot
+    for i, ax in enumerate(axes):
+        # Get data for both curves
+        y1 = y_data_1[i]
+        y2 = y_data_2[i]
+        y3 = y_data_3[i]
+
+
+        if i == 2:
+            # Find extr values
+            extr_idx_1 = np.argmin(y1)
+            extr_x_1, extr_y_1 = thresholds[extr_idx_1], y1[extr_idx_1]
+
+            extr_idx_2 = np.argmin(y2)
+            extr_x_2, extr_y_2 = thresholds[extr_idx_2], y2[extr_idx_2]
+            
+            extr_idx_3 = np.argmin(y3)
+            extr_x_3, extr_y_3 = thresholds[extr_idx_3], y3[extr_idx_3]
+        else:
+            # Find extr values
+            extr_idx_1 = np.argmax(y1)
+            extr_x_1, extr_y_1 = thresholds[extr_idx_1], y1[extr_idx_1]
+
+            extr_idx_2 = np.argmax(y2)
+            extr_x_2, extr_y_2 = thresholds[extr_idx_2], y2[extr_idx_2]
+            
+            extr_idx_3 = np.argmax(y3)
+            extr_x_3, extr_y_3 = thresholds[extr_idx_3], y3[extr_idx_3]
+
+        # Plot both curves
+        ax.plot(thresholds, y1, label=label[0], color=curve_colors[0])
+        ax.plot(thresholds, y2, label=label[1], color=curve_colors[1])
+        ax.plot(thresholds, y3, label=label[2], color=curve_colors[2])
+
+        # Highlight extr values with different colors
+        ax.scatter(extr_x_1, extr_y_1, color=highlight_colors[0], s=70,  label=f"{extr_y_1:.5f}")
+        ax.scatter(extr_x_2, extr_y_2, color=highlight_colors[1], s=70,  label=f"{extr_y_2:.5f}")
+        ax.scatter(extr_x_3, extr_y_3, color=highlight_colors[2], s=70,  label=f"{extr_y_3:.5f}")
+        
+        # Set title, legend, and grid
+        ax.set_title(titles_mi_ru_S[i])
+        ax.legend()
+        # ax.grid(True)
+        
+    # Adjust layout
+    fig.suptitle(f'Mi RU S benchmark for {tool_name} in NK {cafa}', fontsize=16)
+    plt.subplots_adjust(top=0.9)  # Increase the top margin
+    plt.savefig(f"{NK_path}/Mi_RU_S_benchmark_by_aspect_{tool_name}_{cafa}_NK.png", format="png")    
+
 
     # no data version
     fig, axes = plt.subplots(2, 2, figsize=(10, 6), layout='constrained')
@@ -481,6 +829,130 @@ def compute_benchmark_by_cafa(path, model, cafa, steps, current_datetime, dir_tr
     fig.suptitle(f'Comprehensive benchmark for {tool_name} in LK {cafa}', fontsize=16)
     plt.subplots_adjust(top=0.9)  # Increase the top margin
     plt.savefig(f"{LK_path}/benchmark_by_aspect_{tool_name}_{cafa}_LK.png", format="png")
+
+
+    # Triple weighted measurements LK
+    fig, axes = plt.subplots(2, 2, figsize=(10, 6), layout='constrained')
+    axes = axes.flatten()  # Flatten the 2D array for easy iteration
+    y_data_1 = [ICw_precision_across_aspects_LK[0], ICw_recall_across_aspects_LK[0], \
+                S_measure_across_aspects_LK[0], ICw_F1score_across_aspects_LK[0]]
+    y_data_2 = [ICw_precision_across_aspects_LK[1], ICw_recall_across_aspects_LK[1], \
+                S_measure_across_aspects_LK[1], ICw_F1score_across_aspects_LK[1]]
+    y_data_3 = [ICw_precision_across_aspects_LK[2], ICw_recall_across_aspects_LK[2], \
+                S_measure_across_aspects_LK[2], ICw_F1score_across_aspects_LK[2]]
+    label = [f"Aspect M LK", f"Aspect C LK", f"Aspect P LK"]
+
+
+    # Loop through each subplot
+    for i, ax in enumerate(axes):
+        # Get data for both curves
+        y1 = y_data_1[i]
+        y2 = y_data_2[i]
+        y3 = y_data_3[i]
+
+
+        if i == 2:
+            # Find extr values
+            extr_idx_1 = np.argmin(y1)
+            extr_x_1, extr_y_1 = thresholds[extr_idx_1], y1[extr_idx_1]
+
+            extr_idx_2 = np.argmin(y2)
+            extr_x_2, extr_y_2 = thresholds[extr_idx_2], y2[extr_idx_2]
+            
+            extr_idx_3 = np.argmin(y3)
+            extr_x_3, extr_y_3 = thresholds[extr_idx_3], y3[extr_idx_3]
+        else:
+            # Find extr values
+            extr_idx_1 = np.argmax(y1)
+            extr_x_1, extr_y_1 = thresholds[extr_idx_1], y1[extr_idx_1]
+
+            extr_idx_2 = np.argmax(y2)
+            extr_x_2, extr_y_2 = thresholds[extr_idx_2], y2[extr_idx_2]
+            
+            extr_idx_3 = np.argmax(y3)
+            extr_x_3, extr_y_3 = thresholds[extr_idx_3], y3[extr_idx_3]
+
+        # Plot both curves
+        ax.plot(thresholds, y1, label=label[0], color=curve_colors[0])
+        ax.plot(thresholds, y2, label=label[1], color=curve_colors[1])
+        ax.plot(thresholds, y3, label=label[2], color=curve_colors[2])
+
+        # Highlight extr values with different colors
+        ax.scatter(extr_x_1, extr_y_1, color=highlight_colors[0], s=70,  label=f"{extr_y_1:.5f}")
+        ax.scatter(extr_x_2, extr_y_2, color=highlight_colors[1], s=70,  label=f"{extr_y_2:.5f}")
+        ax.scatter(extr_x_3, extr_y_3, color=highlight_colors[2], s=70,  label=f"{extr_y_3:.5f}")
+        
+        # Set title, legend, and grid
+        ax.set_title(titles_weighted[i])
+        ax.legend()
+        # ax.grid(True)
+        
+    # Adjust layout
+    fig.suptitle(f'Comprehensive weighted benchmark for {tool_name} in LK {cafa}', fontsize=16)
+    plt.subplots_adjust(top=0.9)  # Increase the top margin
+    plt.savefig(f"{LK_path}/benchmark_by_aspect_{tool_name}_{cafa}_LK_weighted.png", format="png")
+
+    
+    # Misinformation and remaining uncertainty version LK
+    fig, axes = plt.subplots(1, 3, figsize=(10, 6), layout='constrained')
+    axes = axes.flatten()  # Flatten the 2D array for easy iteration
+    y_data_1 = [misinformation_across_aspects_LK[0], remaining_uncertainty_across_aspects_LK[0],\
+                S_measure_across_aspects_LK[0]]
+    y_data_2 = [misinformation_across_aspects_LK[1], remaining_uncertainty_across_aspects_LK[1], \
+                S_measure_across_aspects_LK[1]]
+    y_data_3 = [misinformation_across_aspects_LK[2], remaining_uncertainty_across_aspects_LK[2], \
+                S_measure_across_aspects_LK[2]]
+    label = [f"Aspect M LK", f"Aspect C LK", f"Aspect P LK"]
+
+
+    # Loop through each subplot
+    for i, ax in enumerate(axes):
+        # Get data for both curves
+        y1 = y_data_1[i]
+        y2 = y_data_2[i]
+        y3 = y_data_3[i]
+
+
+        if i == 2:
+            # Find extr values
+            extr_idx_1 = np.argmin(y1)
+            extr_x_1, extr_y_1 = thresholds[extr_idx_1], y1[extr_idx_1]
+
+            extr_idx_2 = np.argmin(y2)
+            extr_x_2, extr_y_2 = thresholds[extr_idx_2], y2[extr_idx_2]
+            
+            extr_idx_3 = np.argmin(y3)
+            extr_x_3, extr_y_3 = thresholds[extr_idx_3], y3[extr_idx_3]
+        else:
+            # Find extr values
+            extr_idx_1 = np.argmax(y1)
+            extr_x_1, extr_y_1 = thresholds[extr_idx_1], y1[extr_idx_1]
+
+            extr_idx_2 = np.argmax(y2)
+            extr_x_2, extr_y_2 = thresholds[extr_idx_2], y2[extr_idx_2]
+            
+            extr_idx_3 = np.argmax(y3)
+            extr_x_3, extr_y_3 = thresholds[extr_idx_3], y3[extr_idx_3]
+
+        # Plot both curves
+        ax.plot(thresholds, y1, label=label[0], color=curve_colors[0])
+        ax.plot(thresholds, y2, label=label[1], color=curve_colors[1])
+        ax.plot(thresholds, y3, label=label[2], color=curve_colors[2])
+
+        # Highlight extr values with different colors
+        ax.scatter(extr_x_1, extr_y_1, color=highlight_colors[0], s=70,  label=f"{extr_y_1:.5f}")
+        ax.scatter(extr_x_2, extr_y_2, color=highlight_colors[1], s=70,  label=f"{extr_y_2:.5f}")
+        ax.scatter(extr_x_3, extr_y_3, color=highlight_colors[2], s=70,  label=f"{extr_y_3:.5f}")
+        
+        # Set title, legend, and grid
+        ax.set_title(titles_mi_ru_S[i])
+        ax.legend()
+        # ax.grid(True)
+        
+    # Adjust layout
+    fig.suptitle(f'Mi RU S benchmark for {tool_name} in LK {cafa}', fontsize=16)
+    plt.subplots_adjust(top=0.9)  # Increase the top margin
+    plt.savefig(f"{LK_path}/Mi_RU_S_benchmark_by_aspect_{tool_name}_{cafa}_LK.png", format="png")   
     
 
     # No data version
@@ -606,6 +1078,119 @@ def compute_benchmark_by_cafa(path, model, cafa, steps, current_datetime, dir_tr
     fig.suptitle(f'Comprehensive benchmark for {tool_name} in {cafa}', fontsize=16)
     plt.subplots_adjust(top=0.9)  # Increase the top margin
     plt.savefig(f"{comp_path}/comprehensive_benchmark_by_aspect_{tool_name}_{cafa}.png", format="png")
+
+
+    # Weighted version
+
+    
+    """
+    y_data = [tot_IC_weighted_precision_LK, tot_IC_weighted_recall_LK, tot_S_measure_LK, tot_IC_weighted_F1_LK]
+    y1 = tot_misinformation_LK
+    y2 = tot_remaining_uncertainty_LK
+
+    ICw_precision_across_aspects_LK.append(tot_IC_weighted_precision_LK)
+    ICw_recall_across_aspects_LK.append(tot_IC_weighted_recall_LK)
+    misinformation_across_aspects_LK.append(tot_misinformation_LK)
+    remaining_uncertainty_across_aspects_LK.append(tot_remaining_uncertainty_LK)
+    ICw_F1score_across_aspects_LK.append(tot_IC_weighted_F1_LK)
+    S_measure_across_aspects_LK.append(tot_S_measure_LK)
+    """
+
+    curve_colors = ["#1f77b4", "#d62728", "#2ca02c"]
+    highlight_colors = ["#004c99", "#800000", "#005c00"]
+    line_styles = ["-", "--"]
+    markers = ["o", "^"] 
+    # Create subplots
+    fig, axes = plt.subplots(2, 2, figsize=(12, 8), layout='constrained')
+    axes = axes.flatten()  # Flatten the 2D array for easy iteration
+    # NK curves
+    y_data_1 = [ICw_precision_across_aspects_NK[0], ICw_recall_across_aspects_NK[0], \
+                S_measure_across_aspects_NK[0], ICw_F1score_across_aspects_NK[0]]
+    y_data_2 = [ICw_precision_across_aspects_NK[1], ICw_recall_across_aspects_NK[1], \
+                S_measure_across_aspects_NK[1], ICw_F1score_across_aspects_NK[1]]
+    y_data_3 = [ICw_precision_across_aspects_NK[2], ICw_recall_across_aspects_NK[2], \
+                S_measure_across_aspects_NK[2], ICw_F1score_across_aspects_NK[2]]
+    # LK curves
+    y_data_4 = [ICw_precision_across_aspects_LK[0], ICw_recall_across_aspects_LK[0], \
+                S_measure_across_aspects_LK[0], ICw_F1score_across_aspects_LK[0]]
+    y_data_5 = [ICw_precision_across_aspects_LK[1], ICw_recall_across_aspects_LK[1], \
+                S_measure_across_aspects_LK[1], ICw_F1score_across_aspects_LK[1]]
+    y_data_6 = [ICw_precision_across_aspects_LK[2], ICw_recall_across_aspects_LK[2], \
+                S_measure_across_aspects_LK[2], ICw_F1score_across_aspects_LK[2]]
+    label = [f"Aspect M NK", f"Aspect C NK", f"Aspect P NK", f"Aspect M LK", f"Aspect C LK", f"Aspect P LK"]
+    # Loop through each subplot
+    for i, ax in enumerate(axes):
+        # Get data for both curves
+        y1 = y_data_1[i]
+        y2 = y_data_2[i]
+        y3 = y_data_3[i]
+        y4 = y_data_4[i]
+        y5 = y_data_5[i]
+        y6 = y_data_6[i]
+
+        # Find extr values
+        if i == 2:
+            extr_idx_1 = np.argmin(y1)
+            extr_x_1, extr_y_1 = thresholds[extr_idx_1], y1[extr_idx_1]
+
+            extr_idx_2 = np.argmin(y2)
+            extr_x_2, extr_y_2 = thresholds[extr_idx_2], y2[extr_idx_2]
+
+            extr_idx_3 = np.argmin(y3)
+            extr_x_3, extr_y_3 = thresholds[extr_idx_3], y3[extr_idx_3]
+
+            extr_idx_4 = np.argmin(y4)
+            extr_x_4, extr_y_4 = thresholds[extr_idx_4], y4[extr_idx_4]
+
+            extr_idx_5 = np.argmin(y5)
+            extr_x_5, extr_y_5 = thresholds[extr_idx_5], y5[extr_idx_5]
+
+            extr_idx_6 = np.argmin(y6)
+            extr_x_6, extr_y_6 = thresholds[extr_idx_6], y6[extr_idx_6]
+        
+        else:
+            extr_idx_1 = np.argmax(y1)
+            extr_x_1, extr_y_1 = thresholds[extr_idx_1], y1[extr_idx_1]
+
+            extr_idx_2 = np.argmax(y2)
+            extr_x_2, extr_y_2 = thresholds[extr_idx_2], y2[extr_idx_2]
+
+            extr_idx_3 = np.argmax(y3)
+            extr_x_3, extr_y_3 = thresholds[extr_idx_3], y3[extr_idx_3]
+
+            extr_idx_4 = np.argmax(y4)
+            extr_x_4, extr_y_4 = thresholds[extr_idx_4], y4[extr_idx_4]
+
+            extr_idx_5 = np.argmax(y5)
+            extr_x_5, extr_y_5 = thresholds[extr_idx_5], y5[extr_idx_5]
+
+            extr_idx_6 = np.argmax(y6)
+            extr_x_6, extr_y_6 = thresholds[extr_idx_6], y6[extr_idx_6]
+
+        # Plot both curves
+        ax.plot(thresholds, y1, label=label[0], color=curve_colors[0], linestyle=line_styles[0])
+        ax.plot(thresholds, y2, label=label[1], color=curve_colors[1], linestyle=line_styles[0])
+        ax.plot(thresholds, y3, label=label[2], color=curve_colors[2], linestyle=line_styles[0])
+        ax.plot(thresholds, y4, label=label[3], color=curve_colors[0], linestyle=line_styles[1])
+        ax.plot(thresholds, y5, label=label[4], color=curve_colors[1], linestyle=line_styles[1])
+        ax.plot(thresholds, y6, label=label[5], color=curve_colors[2], linestyle=line_styles[1])
+
+        # Highlight max values with different colors
+        ax.scatter(extr_x_1, extr_y_1, color=highlight_colors[0], s=60,  label=f"{extr_y_1:.5f}", marker=markers[0])
+        ax.scatter(extr_x_2, extr_y_2, color=highlight_colors[1], s=60,  label=f"{extr_y_2:.5f}", marker=markers[0])
+        ax.scatter(extr_x_3, extr_y_3, color=highlight_colors[2], s=60,  label=f"{extr_y_3:.5f}", marker=markers[0])
+        ax.scatter(extr_x_4, extr_y_4, color=highlight_colors[0], s=60,  label=f"{extr_y_4:.5f}", marker=markers[1])
+        ax.scatter(extr_x_5, extr_y_5, color=highlight_colors[1], s=60,  label=f"{extr_y_5:.5f}", marker=markers[1])
+        ax.scatter(extr_x_6, extr_y_6, color=highlight_colors[2], s=60,  label=f"{extr_y_6:.5f}", marker=markers[1])
+
+        # Set title, legend, and grid
+        ax.set_title(titles_weighted[i])
+        ax.legend()
+        # ax.grid(True)
+    # Adjust layout
+    fig.suptitle(f'Comprehensive weighted benchmark for {tool_name} in {cafa}', fontsize=16)
+    plt.subplots_adjust(top=0.9)  # Increase the top margin
+    plt.savefig(f"{comp_path}/comprehensive_weighted_benchmark_by_aspect_{tool_name}_{cafa}.png", format="png")
         
     # No data version
     curve_colors = ["#1f77b4", "#d62728", "#2ca02c"]
@@ -718,6 +1303,49 @@ def compute_benchmark_by_cafa(path, model, cafa, steps, current_datetime, dir_tr
         file.write(f"GPs with no predictions LK aspect M: {gp_across_aspects_LK[0]}\n\n")
         file.write(f"GPs with no predictions LK aspect C: {gp_across_aspects_LK[1]}\n\n")
         file.write(f"GPs with no predictions LK aspect P: {gp_across_aspects_LK[2]}\n\n")
+
+        file.write(f"\n\nWeighted metrics\n\n")
+
+        file.write(f"Max weighted precision NK aspect M: {max(ICw_precision_across_aspects_NK[0])}\n")
+        file.write(f"Max weighted precision NK aspect C: {max(ICw_precision_across_aspects_NK[1])}\n")
+        file.write(f"Max weighted precision NK aspect P: {max(ICw_precision_across_aspects_NK[2])}\n")
+        file.write(f"Max weighted recall NK aspect M: {max(ICw_recall_across_aspects_NK[0])}\n")
+        file.write(f"Max weighted recall NK aspect C: {max(ICw_recall_across_aspects_NK[1])}\n")
+        file.write(f"Max weighted recall NK aspect P: {max(ICw_recall_across_aspects_NK[2])}\n")
+        file.write(f"Max weighted F1score NK aspect M: {max(ICw_F1score_across_aspects_NK[0])}\n")
+        file.write(f"Max weighted F1score NK aspect C: {max(ICw_F1score_across_aspects_NK[1])}\n")
+        file.write(f"Max weighted F1score NK aspect P: {max(ICw_F1score_across_aspects_NK[2])}\n")
+
+        file.write(f"Max misinformation NK aspect M: {max(misinformation_across_aspects_NK[0])}\n")
+        file.write(f"Max misinformation NK aspect C: {max(misinformation_across_aspects_NK[1])}\n")
+        file.write(f"Max misinformation NK aspect P: {max(misinformation_across_aspects_NK[2])}\n")
+        file.write(f"Max remaining uncertainty NK aspect M: {max(remaining_uncertainty_across_aspects_NK[0])}\n")
+        file.write(f"Max remaining uncertainty NK aspect C: {max(remaining_uncertainty_across_aspects_NK[1])}\n")
+        file.write(f"Max remaining uncertainty NK aspect P: {max(remaining_uncertainty_across_aspects_NK[2])}\n")
+        file.write(f"Min S measure NK aspect M: {min(S_measure_across_aspects_NK[0])}\n")
+        file.write(f"Min S measure NK aspect C: {min(S_measure_across_aspects_NK[1])}\n")
+        file.write(f"Min S measure NK aspect P: {min(S_measure_across_aspects_NK[2])}\n")
+
+
+        file.write(f"Max weighted precision LK aspect M: {max(ICw_precision_across_aspects_LK[0])}\n")
+        file.write(f"Max weighted precision LK aspect C: {max(ICw_precision_across_aspects_LK[1])}\n")
+        file.write(f"Max weighted precision LK aspect P: {max(ICw_precision_across_aspects_LK[2])}\n")
+        file.write(f"Max weighted recall LK aspect M: {max(ICw_recall_across_aspects_LK[0])}\n")
+        file.write(f"Max weighted recall LK aspect C: {max(ICw_recall_across_aspects_LK[1])}\n")
+        file.write(f"Max weighted recall LK aspect P: {max(ICw_recall_across_aspects_LK[2])}\n")
+        file.write(f"Max weighted F1score LK aspect M: {max(ICw_F1score_across_aspects_LK[0])}\n")
+        file.write(f"Max weighted F1score LK aspect C: {max(ICw_F1score_across_aspects_LK[1])}\n")
+        file.write(f"Max weighted F1score LK aspect P: {max(ICw_F1score_across_aspects_LK[2])}\n")
+
+        file.write(f"Max misinformation LK aspect M: {max(misinformation_across_aspects_LK[0])}\n")
+        file.write(f"Max misinformation LK aspect C: {max(misinformation_across_aspects_LK[1])}\n")
+        file.write(f"Max misinformation LK aspect P: {max(misinformation_across_aspects_LK[2])}\n")
+        file.write(f"Max remaining uncertainty LK aspect M: {max(remaining_uncertainty_across_aspects_LK[0])}\n")
+        file.write(f"Max remaining uncertainty LK aspect C: {max(remaining_uncertainty_across_aspects_LK[1])}\n")
+        file.write(f"Max remaining uncertainty LK aspect P: {max(remaining_uncertainty_across_aspects_LK[2])}\n")
+        file.write(f"Min S measure LK aspect M: {min(S_measure_across_aspects_LK[0])}\n")
+        file.write(f"Min S measure LK aspect C: {min(S_measure_across_aspects_LK[1])}\n")
+        file.write(f"Min S measure LK aspect P: {min(S_measure_across_aspects_LK[2])}\n")
             
         
         file.write(f"Steps: {steps}\n")
@@ -753,6 +1381,62 @@ def compute_benchmark_by_cafa(path, model, cafa, steps, current_datetime, dir_tr
         file.write("F1score in LK: \n" + ", ".join(map(str, F1score_across_aspects_LK[1])) + "\n")
         file.write("F1score in LK: \n" + ", ".join(map(str, F1score_across_aspects_LK[2])) + "\n")
 
+
+        """
+        ICw_precision_across_aspects_LK.append(tot_IC_weighted_precision_LK)
+        ICw_recall_across_aspects_LK.append(tot_IC_weighted_recall_LK)
+        misinformation_across_aspects_LK.append(tot_misinformation_LK)
+        remaining_uncertainty_across_aspects_LK.append(tot_remaining_uncertainty_LK)
+        ICw_F1score_across_aspects_LK.append(tot_IC_weighted_F1_LK)
+        S_measure_across_aspects_LK.append(tot_S_measure_LK)
+        """
+
+
+        file.write(f"\n Weighted metrics\n")
+        file.write(f"\nNK results\n")
+        file.write("Weighted Precision in NK: \n" + ", ".join(map(str, ICw_precision_across_aspects_NK[0])) + "\n")
+        file.write("Weighted Precision in NK: \n" + ", ".join(map(str, ICw_precision_across_aspects_NK[1])) + "\n")
+        file.write("Weighted Precision in NK: \n" + ", ".join(map(str, ICw_precision_across_aspects_NK[2])) + "\n")
+        file.write("Weighted Recall in NK: \n" + ", ".join(map(str, ICw_recall_across_aspects_NK[0])) + "\n")
+        file.write("Weighted Recall in NK: \n" + ", ".join(map(str, ICw_recall_across_aspects_NK[1])) + "\n")
+        file.write("Weighted Recall in NK: \n" + ", ".join(map(str, ICw_recall_across_aspects_NK[2])) + "\n")
+        file.write("Weighted F1score in NK: \n" + ", ".join(map(str, ICw_F1score_across_aspects_NK[0])) + "\n")
+        file.write("Weighted F1score in NK: \n" + ", ".join(map(str, ICw_F1score_across_aspects_NK[1])) + "\n")
+        file.write("Weighted F1score in NK: \n" + ", ".join(map(str, ICw_F1score_across_aspects_NK[2])) + "\n")
+
+        file.write("Misinformation in NK: \n" + ", ".join(map(str, misinformation_across_aspects_NK[0])) + "\n")
+        file.write("Misinformation in NK: \n" + ", ".join(map(str, misinformation_across_aspects_NK[1])) + "\n")
+        file.write("Misinformation in NK: \n" + ", ".join(map(str, misinformation_across_aspects_NK[2])) + "\n")
+        file.write("Remaining uncertainty in NK: \n" + ", ".join(map(str, remaining_uncertainty_across_aspects_NK[0])) + "\n")
+        file.write("Remaining uncertainty in NK: \n" + ", ".join(map(str, remaining_uncertainty_across_aspects_NK[1])) + "\n")
+        file.write("Remaining uncertainty in NK: \n" + ", ".join(map(str, remaining_uncertainty_across_aspects_NK[2])) + "\n")
+        file.write("S measure in NK: \n" + ", ".join(map(str, S_measure_across_aspects_NK[0])) + "\n")
+        file.write("S measure in NK: \n" + ", ".join(map(str, S_measure_across_aspects_NK[1])) + "\n")
+        file.write("S measure in NK: \n" + ", ".join(map(str, S_measure_across_aspects_NK[2])) + "\n")
+        
+        
+        file.write(f"\nLK results\n")
+        file.write("Weighted Precision in LK: \n" + ", ".join(map(str, ICw_precision_across_aspects_LK[0])) + "\n")
+        file.write("Weighted Precision in LK: \n" + ", ".join(map(str, ICw_precision_across_aspects_LK[1])) + "\n")
+        file.write("Weighted Precision in LK: \n" + ", ".join(map(str, ICw_precision_across_aspects_LK[2])) + "\n")
+        file.write("Weighted Recall in LK: \n" + ", ".join(map(str, ICw_recall_across_aspects_LK[0])) + "\n")
+        file.write("Weighted Recall in LK: \n" + ", ".join(map(str, ICw_recall_across_aspects_LK[1])) + "\n")
+        file.write("Weighted Recall in LK: \n" + ", ".join(map(str, ICw_recall_across_aspects_LK[2])) + "\n")
+        file.write("Weighted F1score in LK: \n" + ", ".join(map(str, ICw_F1score_across_aspects_LK[0])) + "\n")
+        file.write("Weighted F1score in LK: \n" + ", ".join(map(str, ICw_F1score_across_aspects_LK[1])) + "\n")
+        file.write("Weighted F1score in LK: \n" + ", ".join(map(str, ICw_F1score_across_aspects_LK[2])) + "\n")
+
+        file.write("Misinformation in LK: \n" + ", ".join(map(str, misinformation_across_aspects_LK[0])) + "\n")
+        file.write("Misinformation in LK: \n" + ", ".join(map(str, misinformation_across_aspects_LK[1])) + "\n")
+        file.write("Misinformation in LK: \n" + ", ".join(map(str, misinformation_across_aspects_LK[2])) + "\n")
+        file.write("Remaining uncertainty in LK: \n" + ", ".join(map(str, remaining_uncertainty_across_aspects_LK[0])) + "\n")
+        file.write("Remaining uncertainty in LK: \n" + ", ".join(map(str, remaining_uncertainty_across_aspects_LK[1])) + "\n")
+        file.write("Remaining uncertainty in LK: \n" + ", ".join(map(str, remaining_uncertainty_across_aspects_LK[2])) + "\n")
+        file.write("S measure in LK: \n" + ", ".join(map(str, S_measure_across_aspects_LK[0])) + "\n")
+        file.write("S measure in LK: \n" + ", ".join(map(str, S_measure_across_aspects_LK[1])) + "\n")
+        file.write("S measure in LK: \n" + ", ".join(map(str, S_measure_across_aspects_LK[2])) + "\n")
+
+
     print(f"Report saved as {report_name}")
 
 
@@ -776,10 +1460,16 @@ def bench_by_aspect(model_path_C5, model_path_C4, model_name, stepsize, cafa, di
     print("Cafa tested:")
     print(cafa_types)
 
+    # Open and load the JSON file
+    with open(dir_tree['owl_dir_path'] + '/dict_ics.json', 'r') as file:
+        IC_dict = json.load(file)
+        
+    IC_dict = {key.replace('_', ':'): value for key, value in IC_dict.items()}
+
     print(f"Current model: {model_name}")
     for cafa_type in cafa_types:
         print(f"Current cafa: {cafa_type}")
         if cafa_type == 'C5':
-            compute_benchmark_by_cafa(model_path_C5, model_name, cafa_type, stepsize, current_datetime, dir_tree)
+            compute_benchmark_by_cafa(model_path_C5, model_name, cafa_type, stepsize, current_datetime, dir_tree, IC_dict)
         elif cafa_type == 'C4':
-            compute_benchmark_by_cafa(model_path_C4, model_name, cafa_type, stepsize, current_datetime, dir_tree)
+            compute_benchmark_by_cafa(model_path_C4, model_name, cafa_type, stepsize, current_datetime, dir_tree, IC_dict)

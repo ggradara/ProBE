@@ -114,9 +114,9 @@ def make_db(uniprot_abs_path, db_path):
 
 
 # SCRIPTS FOR CAFA 5
-def diamond_management_C5(dir_tree, uniprot_merged_path, cores=32):    
+def diamond_management_C5(dir_tree, uniprot_merged_path, cores=32):
 
-    chunked_C5_dir = os.path.join(dir_tree['pc5_dir_path'], "chunked_results_cafa5") 
+    chunked_C5_dir = os.path.join(dir_tree['pc5_dir_path'], "chunked_results_cafa5")
     ensure_directory_exists(chunked_C5_dir)
     dmnd_chunks_path = dir_tree['dmnd_data_path'] + '/chunked_cafa5'
     subprocess.run(["bash", "diamond_chunked_cafa5.sh", dmnd_chunks_path, uniprot_merged_path, chunked_C5_dir, str(cores)])
@@ -124,16 +124,18 @@ def diamond_management_C5(dir_tree, uniprot_merged_path, cores=32):
     ####   Concat all the pieces of diamond search to a single file   ####
     # File to save the concatenated result
     concat_file = chunked_C5_dir + '/concat_diamond_cafa5.tsv'
-    
+
     concat_file = chunked_C5_dir + '/concat_diamond_cafa5.tsv'
     diamond_columns = [
-    'Query_ID', 'Subject_ID', 'Percentage_matches', 'Alignment_length', 'Mismatches', 'Gap_openings', 
-    'Start_of_alignment_in_query', 'End_of_alignment_in_query', 'Start_of_alignment_in_subject', 
+    'Query_ID', 'Subject_ID', 'Percentage_matches', 'Alignment_length', 'Mismatches', 'Gap_openings',
+    'Start_of_alignment_in_query', 'End_of_alignment_in_query', 'Start_of_alignment_in_subject',
     'End_of_alignment_in_subject', 'Expected_value', 'Bit_score']
     combined_dataframes = []
     combined_df = pd.DataFrame()
-    for i in range(1, 11):
-        filename = chunked_C5_dir + f"/cafa5_k150_out_chunk_{i}.tsv"
+
+    files = [x for x in os.listdir(chunked_C5_dir) if ".tsv" in x]
+    for file in files:
+        filename = os.path.join(chunked_C5_dir, file)
         df = pd.read_csv(filename, sep='\t', comment='#', header=None, names=diamond_columns, skiprows=1)
         combined_dataframes.append(df)
 
@@ -149,19 +151,19 @@ def diamond_management_C5(dir_tree, uniprot_merged_path, cores=32):
     filtered_concat = chunked_C5_dir + '/filtered_concat_cafa5.tsv'
     further_inv_IDs = chunked_C5_dir + '/further_investigation_cafa5_IDs.tsv'
     empty_inv_1 = filter_diamond('C5', concat_file, filtered_concat, further_inv_IDs, True, 150, True)
-    
-    
+    print(f'EMPTY_INV_1 = {empty_inv_1}')
+
     if not empty_inv_1:  # Check if there is no further need to expand the search
         # Takes all the proteins that requires further investigations and fetches the data from
         # the CAFA5 (or CAFA4) fasta to create a query file for diamond
 
         # Define file paths
-        fasta_file = "diamond_data/testsuperset_cafa5.fasta" 
-        query_file_fur_inv = chunked_C5_dir + "/cafa5_inv_10000_query.fasta" 
+        fasta_file = os.path.join(dir_tree['dmnd_data_path'], "CAFA5.fasta")
+        query_file_fur_inv = chunked_C5_dir + "/cafa5_inv_10000_query.fasta"
 
         # Read access IDs from the txt file
         with open(further_inv_IDs, 'r') as txt:
-            access_ids = {line.strip() for line in txt if line.strip()} 
+            access_ids = {line.strip() for line in txt if line.strip()}
 
         # Filter the FASTA file
         filtered_records = []
@@ -174,20 +176,22 @@ def diamond_management_C5(dir_tree, uniprot_merged_path, cores=32):
         SeqIO.write(filtered_records, query_file_fur_inv, "fasta")
 
         print(f"Filtered {len(filtered_records)} records. Saved to {query_file_fur_inv}.")
-        
+
         # Subprocessing bash per la query aggiuntiva
-        
+
         ## Round 2: search for 10000 hits in the Uniprot DB
-    
+
         queries_1 = 10000
         further_inv_dmnd = chunked_C5_dir + '/further_inv_cafa5.tsv'
-        
+
         subprocess.run(["bash", "diamond_chunked_fur_inv_cafa.sh", query_file_fur_inv, uniprot_merged_path, further_inv_dmnd, str(queries_1), str(cores)])
-        
+
         filtered_inv1 = chunked_C5_dir + '/further_investigation_cafa5_inv1.tsv'
         further_inv_IDs_2 = chunked_C5_dir + '/further_investigation_cafa5_IDs_2.tsv'
         empty_inv_2 = filter_diamond('C5', further_inv_dmnd, filtered_inv1, further_inv_IDs_2, True, queries_1, True, True)
-    
+        print(f'EMPTY_INV_2: {empty_inv_2}')
+
+        #empty_inv_2 = True
         if not empty_inv_2:
             query_file_fur_inv2 = chunked_C5_dir + f"/cafa5_inv_1M_query.fasta" 
             # Read access IDs from the txt file
@@ -205,16 +209,16 @@ def diamond_management_C5(dir_tree, uniprot_merged_path, cores=32):
             SeqIO.write(filtered_records, query_file_fur_inv2, "fasta")
 
             print(f"Filtered {len(filtered_records)} records. Saved to {query_file_fur_inv2}.")
-            
+
             ## Round 3: search for 1m hits in the Uniprot DB
             queries_2 = 1000000
             further_inv_dmnd_2 = chunked_C5_dir + '/further_inv_cafa5_2.tsv'
             subprocess.run(["bash", "diamond_chunked_fur_inv_cafa.sh", query_file_fur_inv2, uniprot_merged_path, further_inv_dmnd_2, str(queries_2), str(cores)])
-            
+
             filtered_inv2 = chunked_C5_dir + '/further_investigation_cafa5_inv2.tsv'
             filter_diamond('C5', further_inv_dmnd_2, filtered_inv2, "", False, queries_2, True, True)
 
-    
+
     benchmark_c5_dir = os.path.join(dir_tree['pc5_dir_path'], "benchmarker_cafa5")
     ensure_directory_exists(benchmark_c5_dir)
     filtered_complete_cafa5 = benchmark_c5_dir + '/filtered_chunked_cafa5_1.tsv'
@@ -231,7 +235,7 @@ def diamond_management_C5(dir_tree, uniprot_merged_path, cores=32):
         df2 = pd.read_csv(filtered_inv1, sep='\t')
         df3 = pd.read_csv(filtered_inv2, sep='\t')
         combined_df = pd.concat([df1, df2, df3])
-    
+
     # Remove duplicate rows
     unique_df = combined_df.drop_duplicates()
 
@@ -566,17 +570,17 @@ def benchmark_selection_5_subcat_C5(filename, outfile, fig_hard, fig_overall, df
 # SCRIPTS FOR CAFA 4
 
 def diamond_management_C4(dir_tree, uniprot_merged_path, cores=32):
-    
-    chunked_C4_dir = os.path.join(dir_tree['pc4_dir_path'], "chunked_results_cafa4") 
+
+    chunked_C4_dir = os.path.join(dir_tree['pc4_dir_path'], "chunked_results_cafa4")
     ensure_directory_exists(chunked_C4_dir)
-    
+
     dmnd_chunks_path = dir_tree['dmnd_data_path'] + '/chunked_cafa4'
     subprocess.run(["bash", "diamond_chunked_cafa4.sh", dmnd_chunks_path, uniprot_merged_path, chunked_C4_dir, str(cores)])
 
     ####   Concat all the pieces of diamond search to a single file   ####
     # File to save the concatenated result
     concat_file = chunked_C4_dir + '/concat_diamond_cafa4.tsv'
-    
+
     concat_file = chunked_C4_dir + '/concat_diamond_cafa4.tsv'
     diamond_columns = [
     'Query_ID', 'Subject_ID', 'Percentage_matches', 'Alignment_length', 'Mismatches', 'Gap_openings', 
@@ -584,8 +588,10 @@ def diamond_management_C4(dir_tree, uniprot_merged_path, cores=32):
     'End_of_alignment_in_subject', 'Expected_value', 'Bit_score']
     combined_dataframes = []
     combined_df = pd.DataFrame()
-    for i in range(1, 11):
-        filename = chunked_C4_dir + f"/cafa4_k150_out_chunk_{i}.tsv"
+
+    files = [x for x in os.listdir(chunked_C4_dir) if ".tsv" in x]
+    for file in files:
+        filename = os.path.join(chunked_C4_dir, file)
         df = pd.read_csv(filename, sep='\t', comment='#', header=None, names=diamond_columns, skiprows=1)
         combined_dataframes.append(df)
 
@@ -601,14 +607,15 @@ def diamond_management_C4(dir_tree, uniprot_merged_path, cores=32):
     filtered_concat = chunked_C4_dir + '/filtered_concat_cafa4.tsv'
     further_inv_IDs = chunked_C4_dir + '/further_investigation_cafa4_IDs.tsv'
     empty_inv_1 = filter_diamond('C4', concat_file, filtered_concat, further_inv_IDs, True, 150, True)
+    print(f'EMPTY_INV_1: {empty_inv_1}')
 
-
+    #empty_inv_1 = True
     if not empty_inv_1:  # Check if there is no further need to expand the search
         # Takes all the proteins that requires further investigations and fetches the data from
         # the CAFA5 (or CAFA4) fasta to create a query file for diamond
 
         # Define file paths
-        fasta_file = "diamond_data/superset_cafa4.fasta" 
+        fasta_file = os.path.join(dir_tree['dmnd_data_path'], "CAFA4.fasta")
         query_file_fur_inv = chunked_C4_dir + "/cafa4_inv_10000_query.fasta" 
 
         # Read access IDs from the txt file
@@ -626,17 +633,19 @@ def diamond_management_C4(dir_tree, uniprot_merged_path, cores=32):
         SeqIO.write(filtered_records, query_file_fur_inv, "fasta")
 
         print(f"Filtered {len(filtered_records)} records. Saved to {query_file_fur_inv}.")
-        
+
         ## Round 2: search for 10000 hits in the Uniprot DB
         queries_1 = 10000
         further_inv_dmnd = chunked_C4_dir + '/further_inv_cafa4.tsv'
-        
+
         subprocess.run(["bash", "diamond_chunked_fur_inv_cafa.sh", query_file_fur_inv, uniprot_merged_path, further_inv_dmnd, str(queries_1), str(cores)])
-        
+
         filtered_inv1 = chunked_C4_dir + '/further_investigation_cafa4_inv1.tsv'
         further_inv_IDs_2 = chunked_C4_dir + '/further_investigation_cafa4_IDs_2.tsv'
         empty_inv_2 = filter_diamond('C4', further_inv_dmnd, filtered_inv1, further_inv_IDs_2, True, queries_1, True, True)
-    
+        print(f'EMPTY_INV_": {empty_inv_2}')
+
+    empty_inv_2 = True
     if not empty_inv_2:
         query_file_fur_inv2 = chunked_C4_dir + "/cafa4_inv_1M_query.fasta" 
         # Read access IDs from the txt file
@@ -654,15 +663,15 @@ def diamond_management_C4(dir_tree, uniprot_merged_path, cores=32):
         SeqIO.write(filtered_records, query_file_fur_inv2, "fasta")
 
         print(f"Filtered {len(filtered_records)} records. Saved to {query_file_fur_inv2}.")
-        
+
         ## Round 3: search for 1m hits in the Uniprot DB
         queries_2 = 1000000
         further_inv_dmnd_2 = chunked_C4_dir + '/further_inv_cafa4_2.tsv'
         subprocess.run(["bash", "diamond_chunked_fur_inv_cafa.sh", query_file_fur_inv2, uniprot_merged_path, further_inv_dmnd_2, str(queries_2), str(cores)])
-        
+
         filtered_inv2 = chunked_C4_dir + '/further_investigation_cafa4_inv2.tsv'
         filter_diamond('C4', further_inv_dmnd_2, filtered_inv2, "", False, queries_2, True, True)
-    
+
     benchmark_c4_dir = os.path.join(dir_tree['pc4_dir_path'], "benchmarker_cafa4")
     ensure_directory_exists(benchmark_c4_dir)
     filtered_complete_cafa4 = benchmark_c4_dir + '/filtered_chunked_cafa4_1.tsv'
@@ -679,7 +688,7 @@ def diamond_management_C4(dir_tree, uniprot_merged_path, cores=32):
         df2 = pd.read_csv(filtered_inv1, sep='\t')
         df3 = pd.read_csv(filtered_inv2, sep='\t')
         combined_df = pd.concat([df1, df2, df3])
-    
+
     # Remove duplicate rows
     unique_df = combined_df.drop_duplicates()
 
@@ -688,8 +697,7 @@ def diamond_management_C4(dir_tree, uniprot_merged_path, cores=32):
 
     # Save the result to a new TSV file
     sorted_df.to_csv(filtered_complete_cafa4, sep='\t', index=False)
-    
-    
+
 
 def find_aliases_from_filtered_diamond_2_C4(filename, outfile):
     print("Running: find_aliases_from_filtered_diamond_2_C4 ...")
