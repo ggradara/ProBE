@@ -328,8 +328,7 @@ Both these dataframe are then checked for deprecated or obsolete annotations and
 
 The old and new dataframes are then merged keeping the evidence code of both. These evidence codes are compared to evaluate the development of the evidence of the annotation with time. Each annotation is tagged as such:
 - NK: The gene product was previously unknown but now we have experimental evidence of this function
-- LK1: The gene function was previously unknown for this gene product, but now it has experimental evidence
-- LK2: The gene function was previously known for this gene product, but now it has experimental evidence
+- LK: The gene product didn't have any experimental evidence for this gene function, but now it does.
 - KK: Previously verified knowledge
 
 Some annotations previously regarded as experimental are lost between different releases (eg: due to retractions). So we check the ratio of missing annotations respective to the old GOA. If the number of missing annotation is too high (default: >0.2), all the annotations of that gene product are considered unreliable and is excluded from the groundtruth of the benchmark.
@@ -338,7 +337,7 @@ From the definitive benchmark the pipeline makes a fasta file containing the seq
 
 
 #### Protein Knowledge types (NK/LK)
-If a protein is annotated only by NK annotations is considered New Knowledge (NK). If a protein is annotated with LK1, LK2 (even if other KK annotation are present), it will be considered as Limited Knowledge. However, if a protein is only annotated by KK annotations it will be considered Known Knowledge and escluded from the dataset of the benchmark.
+If a protein is annotated only by NK annotations is considered New Knowledge (NK). If a protein is annotated with LK (even if other KK annotation are present), it will be considered as Limited Knowledge. However, if a protein is only annotated by KK annotations it will be considered Known Knowledge and escluded from the dataset of the benchmark.
 
 #### Preprocessing and benchmarking
 
