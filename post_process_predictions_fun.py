@@ -307,14 +307,14 @@ def parse_file(filepath: str) -> Dict[str, int]:
                     bp_unique.add(go_id)
 
     return {
-        "Representative_ACCID_totali": rep_count,
-        "Proteine_totali": protein_total,
-        "MF_GO_totali": mf_total,
-        "CC_GO_totali": cc_total,
-        "BP_GO_totali": bp_total,
-        "MF_GO_unici": len(mf_unique),
-        "CC_GO_unici": len(cc_unique),
-        "BP_GO_unici": len(bp_unique),
+        "Representative_ACCID_total": rep_count,
+        "Protein_total": protein_total,
+        "MF_GO_total": mf_total,
+        "CC_GO_total": cc_total,
+        "BP_GO_total": bp_total,
+        "MF_GO_unique": len(mf_unique),
+        "CC_GO_unique": len(cc_unique),
+        "BP_GO_unique": len(bp_unique),
     }
 
 
