@@ -26,6 +26,7 @@ From: ubuntu:22.04
     pipeline_C4_fun.py /opt/probe/
     pipeline_C5_fun.py /opt/probe/
     preprocess_predictions_fun.py /opt/probe/
+    post_process_predictions_fun.py /opt/probe/
     bench_by_aspect_custom_fun.py /opt/probe/
     bench_general_custom_fun.py /opt/probe/
     owlLibrary3.py /opt/probe/

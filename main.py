@@ -9,6 +9,7 @@ import pipeline_C4_fun
 import bench_by_aspect_custom_fun
 import bench_general_custom_fun
 import preprocess_predictions_fun
+import post_process_predictions_fun
 import src_collection
 import shutil
 import uuid
@@ -374,6 +375,44 @@ def run_preprocess(config: dict, dir_tree: dict):
 
 
 
+def run_post_process(config: dict, dir_tree: dict):
+    """
+    Performs the post process analysis.
+    """
+    print("\n[INFO] --- Starting post processing ---")
+    start_time = time.time()
+    
+    # --- Configuration Access ---
+    shared_config = config.get('shared', {})
+    postprocessing_config = config.get('postprocessing', {})
+    model_name = postprocessing_config.get('model_name', 'custom_model')
+    post_cafa = postprocessing_config.get('cafa', 'C5')
+    extra_correction = postprocessing_config.get('extra_correction', False)
+    
+    
+    # --- Input Validation ---
+    gt_rel_path = postprocessing_config.get('gt_path')
+    if not gt_rel_path:
+        print("[ERROR] 'gt_path' not defined in preprocessing section of config.", file=sys.stderr)
+        sys.exit(1)
+    
+    # Construct full path inside the container
+    run_path = shared_config.get('run_path', '/data')
+    gt_path_abs_path = os.path.join(run_path, gt_rel_path)
+
+    if not os.path.exists(gt_path_abs_path):
+        print(f"[ERROR] File not found: {gt_path_abs_path}", file=sys.stderr)
+        sys.exit(1)
+
+    post_process_predictions_fun.postprocess(gt_path_abs_path, model_name, post_cafa, dir_tree, extra_correction)
+    
+    print(f"[SUCCESS] --- Postprocessing for {model_name} predictions finished ---")
+    run_time = time.time()
+    elapsed_time = (run_time - start_time)/60  
+    print(f"Elapsed time: {elapsed_time:.3f} minutes to process Postprocessing Pipeline")
+
+
+
 # ===================================================================
 #                          Directory Setup
 # ===================================================================
@@ -411,6 +450,8 @@ def directory_setup(config: dict):
     ensure_directory_exists(pc4_dir_path)
     prep_dir_path = os.path.join(tmp_dir_path, 'preprocessing_data')
     ensure_directory_exists(prep_dir_path)
+    post_dir_path = os.path.join(tmp_dir_path, 'postprocessing_data')
+    ensure_directory_exists(post_dir_path)
 
     # Create the results directories
     dmnd_db_dir_path = os.path.join(base_path, 'dmnd_dbs')
@@ -422,6 +463,8 @@ def directory_setup(config: dict):
     ensure_directory_exists(gt_dir_path)
     prep_data_dir_path = os.path.join(results_dir_path, 'preprocessing_data')
     ensure_directory_exists(prep_data_dir_path)
+    post_data_dir_path = os.path.join(results_dir_path, 'postprocessing_data')
+    ensure_directory_exists(post_data_dir_path)
     prep_preds_dir_path = os.path.join(results_dir_path, 'preprocessed_preds')
     ensure_directory_exists(prep_preds_dir_path)
     btp_dir_path = os.path.join(results_dir_path, 'benchmark_results')
@@ -435,12 +478,14 @@ def directory_setup(config: dict):
     dir_tree['pc5_dir_path'] = pc5_dir_path
     dir_tree['pc4_dir_path'] = pc4_dir_path
     dir_tree['prep_dir_path'] = prep_dir_path
+    dir_tree['post_dir_path'] = post_dir_path
     # Populate with results dirs
     dir_tree['results_dir_path'] = results_dir_path
     dir_tree['owl_dir_path'] = owl_dir_path
     dir_tree['dmnd_db_dir_path'] = dmnd_db_dir_path
     dir_tree['gt_dir_path'] = gt_dir_path
     dir_tree['prep_data_dir_path'] = prep_data_dir_path   # Necessary data required for the preprocessing
+    dir_tree['post_data_dir_path'] = post_data_dir_path
     dir_tree['prep_preds_dir_path'] = prep_preds_dir_path  # Preprocessed tool predictions
     dir_tree['btp_dir_path'] = btp_dir_path
 
@@ -524,6 +569,15 @@ def main():
         description='Preprocesses the data of the predictions required to perform the benchmark.'
     )
     parser_preprocess.set_defaults(func=run_preprocess) # Link sub-command to its function
+
+    # --- Parser for postprocess sub-command ---
+    parser_postprocess = subparsers.add_parser(
+        'postprocess', 
+        parents=[parent_parser], # Inherit shared arguments
+        help='Run the postprocessing for the tool predictions.',
+        description='Postprocesses the data to obtain an abridged format.'
+    )
+    parser_postprocess.set_defaults(func=run_post_process) # Link sub-command to its function
     
     # --- Parser for bench_by_aspect sub-command ---
     parser_bench_by_aspect = subparsers.add_parser(
